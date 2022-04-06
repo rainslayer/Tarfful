@@ -7,12 +7,11 @@
 
 #pragma once
 
-#include <stddef.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstring>
 #include <string>
 #include <iostream>
+#include <fstream>
+#include <sstream>
 
 namespace Microtar {
     enum class EStatus {
@@ -45,7 +44,7 @@ namespace Microtar {
         char size[12];
         char mtime[12];
         char checksum[8];
-        char type;
+        unsigned char type;
         char linkname[100];
         char _padding[255];
     } raw_header_t;
@@ -63,23 +62,23 @@ namespace Microtar {
     class Tar {
     public:
         template<typename T>
-        int file_write(const T &data, unsigned size) const;
+        int file_write(const T &data, size_t size);
 
-        int file_write(const std::string &data, unsigned size) const;
+        int file_write(const std::string &data, size_t size);
 
         template<typename T>
-        int file_read(T &data, unsigned size) const;
+        int file_read(T &data, size_t size);
 
-        int file_read(std::string &data, unsigned size) const;
+        int file_read(std::string &data, size_t size);
 
-        int file_seek(unsigned offset) const;
+        int file_seek(long offset);
 
         int file_close();
 
-        FILE *stream;
-        unsigned pos;
-        unsigned remaining_data;
-        unsigned last_header;
+        std::fstream fstream;
+        size_t pos;
+        size_t remaining_data;
+        size_t last_header;
     };
 
     class Microtar {
@@ -89,13 +88,13 @@ namespace Microtar {
         ~Microtar() = default;
 
     public:
-        static const char *strerror(int err);
+        static std::string strerror(int err);
 
-        static int open(Tar &tar, const std::string &filename, std::string &mode);
+        static int open(Tar &tar, const std::string &filename, const std::ios_base::openmode &mode);
 
         static int close(Tar &tar);
 
-        static int seek(Tar &tar, unsigned pos);
+        static int seek(Tar &tar, long pos);
 
         static int rewind(Tar &tar);
 
@@ -106,15 +105,15 @@ namespace Microtar {
         static int read_header(Tar &tar, header_t &h);
 
         template<typename T>
-        static int read_data(Tar &tar, T &data, unsigned size);
+        static int read_data(Tar &tar, T &data, size_t size);
 
         static int write_header(Tar &tar, const header_t &h);
 
-        static int write_file_header(Tar &tar, const std::string &name, unsigned size);
+        static int write_file_header(Tar &tar, const std::string &name, size_t size);
 
         static int write_dir_header(Tar &tar, const std::string &name);
 
-        static int write_data(Tar &tar, const std::string &data, unsigned size);
+        static int write_data(Tar &tar, const std::string &data, size_t size);
 
         static int finalize(Tar &tar);
 
