@@ -11,6 +11,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <string>
+#include <iostream>
 
 namespace Microtar {
     enum class EStatus {
@@ -58,20 +60,27 @@ namespace Microtar {
         char linkname[100];
     } header_t;
 
-    typedef struct type {
-        int (*read)(type *tar, void *data, unsigned size);
+    class Tar {
+    public:
+        template<typename T>
+        int file_write(const T &data, unsigned size) const;
 
-        int (*write)(type *tar, const void *data, unsigned size);
+        int file_write(const std::string &data, unsigned size) const;
 
-        int (*seek)(type *tar, unsigned pos);
+        template<typename T>
+        int file_read(T &data, unsigned size) const;
 
-        int (*close)(type *tar);
+        int file_read(std::string &data, unsigned size) const;
+
+        int file_seek(unsigned offset) const;
+
+        int file_close();
 
         FILE *stream;
         unsigned pos;
         unsigned remaining_data;
         unsigned last_header;
-    } type;
+    };
 
     class Microtar {
     private:
@@ -82,31 +91,32 @@ namespace Microtar {
     public:
         static const char *strerror(int err);
 
-        static int open(type *tar, const char *filename, const char *mode);
+        static int open(Tar &tar, const std::string &filename, std::string &mode);
 
-        static int close(type *tar);
+        static int close(Tar &tar);
 
-        static int seek(type *tar, unsigned pos);
+        static int seek(Tar &tar, unsigned pos);
 
-        static int rewind(type *tar);
+        static int rewind(Tar &tar);
 
-        static int next(type *tar);
+        static int next(Tar &tar);
 
-        static int find(type *tar, const char *name, header_t *h);
+        static int find(Tar &tar, const std::string &name, header_t &h);
 
-        static int read_header(type *tar, header_t *h);
+        static int read_header(Tar &tar, header_t &h);
 
-        static int read_data(type *tar, void *ptr, unsigned size);
+        template<typename T>
+        static int read_data(Tar &tar, T &data, unsigned size);
 
-        static int write_header(type *tar, const header_t *h);
+        static int write_header(Tar &tar, const header_t &h);
 
-        static int write_file_header(type *tar, const char *name, unsigned size);
+        static int write_file_header(Tar &tar, const std::string &name, unsigned size);
 
-        static int write_dir_header(type *tar, const char *name);
+        static int write_dir_header(Tar &tar, const std::string &name);
 
-        static int write_data(type *tar, const void *data, unsigned size);
+        static int write_data(Tar &tar, const std::string &data, unsigned size);
 
-        static int finalize(type *tar);
+        static int finalize(Tar &tar);
 
     };
 }
