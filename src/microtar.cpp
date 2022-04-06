@@ -398,13 +398,13 @@ void read(const std::string &filename) {
 }
 
 int main(int argc, char *argv[]) {
-    if (argc < 2) {
-        std::cerr << "Filename?\n";
-        std::exit(-1);
-    }
-
-    write(argv[1]);
-    read(argv[1]);
+//    if (argc < 2) {
+//        std::cerr << "Filename?\n";
+//        std::exit(-1);
+//    }
+//
+//    write(argv[1]);
+//    read(argv[1]);
 
     return 0;
 }
