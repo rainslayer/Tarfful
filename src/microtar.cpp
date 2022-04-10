@@ -48,64 +48,61 @@ int tread(Microtar::Tar &tar, T &data, const size_t size) {
 }
 
 template<typename T>
-int twrite(Microtar::Tar &tar, const T &data, const size_t size) {
-    const int err = tar.file_write(data, size);
-    tar.pos += size;
+int Microtar::Tar::twrite(const T &data, const size_t size) {
+    const int err = file_write(data, size);
+    pos += size;
     return err;
 }
 
 
-static int write_null_bytes(Microtar::Tar &tar, const int n) {
+int Microtar::Tar::write_null_bytes(const int n) {
     for (size_t i = 0; i < n; ++i) {
-        const int err = twrite(tar, '\0', 1);
+        const int err = twrite('\0', 1);
         if (err) {
             return err;
         }
     }
-    return static_cast<int>(Microtar::EStatus::ESUCCESS);
+    return static_cast<int>(EStatus::ESUCCESS);
 }
 
 
 static int raw_to_header(Microtar::header_t &h, Microtar::raw_header_t &rh) {
     /* If the checksum starts with a null byte we assume the record is NULL */
-    if (*rh.checksum == '\0') {
+    if (rh.checksum[0] == '\0') {
         return static_cast<int>(Microtar::EStatus::ENULLRECORD);
     }
 
     /* Build and compare checksum */
     const unsigned chksum1 = checksum(rh);
-    unsigned chksum2;
-    sscanf(rh.checksum, "%o", &chksum2);
+    const unsigned chksum2 = strtoul(&rh.checksum[0], nullptr, 8);
     if (chksum1 != chksum2) {
         return static_cast<int>(Microtar::EStatus::EBADCHKSUM);
     }
 
-    /* Load raw header into header */
-    sscanf(rh.mode, "%o", &h.mode);
-    sscanf(rh.owner, "%o", &h.owner);
-    sscanf(rh.size, "%o", &h.size);
-    sscanf(rh.mtime, "%o", &h.mtime);
+    h.mode = strtoul(&rh.mode[0], nullptr, 8);
+    h.owner = strtoul(&rh.owner[0], nullptr, 8);
+    h.size = strtoul(&rh.size[0], nullptr, 8);
+    h.mtime = strtoul(&rh.mtime[0], nullptr, 8);
+
     h.type = rh.type;
-    strncpy(h.name, rh.name, sizeof(h.name));
-    strncpy(h.linkname, rh.linkname, sizeof(h.linkname));
+    strncpy(&h.name[0], &rh.name[0], h.name.size());
+    strncpy(&h.linkname[0], &rh.linkname[0], h.linkname.size());
 
     return static_cast<int>(Microtar::EStatus::ESUCCESS);
 }
 
-
 static int header_to_raw(Microtar::raw_header_t &rh, const Microtar::header_t &h) {
-    /* Load header into raw header */
-    sprintf(rh.mode, "%o", h.mode);
-    sprintf(rh.owner, "%o", h.owner);
-    sprintf(rh.size, "%o", h.size);
-    sprintf(rh.mtime, "%o", h.mtime);
+    sprintf(&rh.mode[0], "%o", h.mode);
+    sprintf(&rh.owner[0], "%o", h.owner);
+    sprintf(&rh.size[0], "%o", h.size);
+    sprintf(&rh.mtime[0], "%o", h.mtime);
     rh.type = h.type ? h.type : static_cast<char>(Microtar::EType::TREG);
-    strncpy(rh.name, h.name, sizeof(h.name));
-    strncpy(rh.linkname, h.linkname, sizeof(h.name));
+    strncpy(&rh.name[0], &h.name[0], rh.name.size());
+    strncpy(&rh.linkname[0], &h.linkname[0], rh.linkname.size());
 
     /* Calculate and write checksum */
     const unsigned chksum = checksum(rh);
-    sprintf(rh.checksum, "%06o", chksum);
+    sprintf(&rh.checksum[0], "%06o", chksum);
     rh.checksum[7] = ' ';
 
     return static_cast<int>(Microtar::EStatus::ESUCCESS);
@@ -139,70 +136,59 @@ std::string Microtar::Microtar::strerror(const int err) {
 
 template<typename T>
 int Microtar::Tar::file_write(const T &data, const size_t size) {
-//    const unsigned res = fwrite(static_cast<const void *>(&data), 1, size, this->stream);
-    this->fstream.write(reinterpret_cast<const char *>(&data), size);
+    fstream.write(reinterpret_cast<const char *>(&data), size);
 
     return static_cast<int>(EStatus::ESUCCESS);
 }
 
 int Microtar::Tar::file_write(const std::string &data, const size_t size) {
-    this->fstream.write(data.data(), size);
+    fstream.write(data.c_str(), size);
 
     return static_cast<int>(EStatus::ESUCCESS);
 }
 
 template<typename T>
 int Microtar::Tar::file_read(T &data, const size_t size) {
-    this->fstream.read(reinterpret_cast<char *>(&data), size);
-//    const unsigned res = fread(static_cast<void *>(&data), 1, size, this->stream);
+    fstream.read(reinterpret_cast<char *>(&data), size);
 
     return static_cast<int>(EStatus::ESUCCESS);
 }
 
 int Microtar::Tar::file_read(std::string &data, const size_t size) {
-    this->fstream.read(static_cast<char *>(std::remove_const<char *>::type(data.c_str())), size);
+    fstream.read(&data[0], size);
 
     return static_cast<int>(EStatus::ESUCCESS);
 }
 
 int Microtar::Tar::file_seek(const long offset) {
-    this->fstream.seekg(offset, std::ios_base::beg);
+    fstream.seekg(offset, std::ios_base::beg);
 
     return static_cast<int>(EStatus::ESUCCESS);
 }
 
 int Microtar::Tar::file_close() {
-    this->fstream.close();
+    fstream.close();
+
     return static_cast<int>(EStatus::ESUCCESS);
 }
 
-
-int Microtar::Microtar::open(Tar &tar, const std::string &filename, const std::ios_base::openmode &mode) {
-    header_t h = {};
-    /* Open file */
-    tar.fstream.open(filename.data(), mode | std::ios_base::binary);
-    if (!tar.fstream) {
-        return static_cast<int>(EStatus::EOPENFAIL);
-    }
-
-    /* Read first header to check it is valid if mode is `r` */
-    if (mode == std::ios_base::in) {
-        const int err = Microtar::read_header(tar, h);
-        if (err != static_cast<int>(EStatus::ESUCCESS)) {
-            Microtar::close(tar);
-            return err;
+void Microtar::Tar::Write(const std::vector<std::string> &filenames) {
+    fstream.open(archiveName, std::fstream::out | std::fstream::binary | std::fstream::app);
+    
+    if (fstream.good()) {
+        for (auto &filename: filenames) {
+            std::ifstream ifstream;
+            ifstream.open(filename, std::fstream::in);
+            std::stringstream fileContentStream;
+            fileContentStream << ifstream.rdbuf();
+            std::string fileContent(fileContentStream.str());
+            write_file_header(filename, fileContent.size());
+            write_data(fileContent, fileContent.size());
         }
+    } else {
+        std::cerr << fstream.rdstate() << '\n';
     }
-
-    /* Return ok */
-    return static_cast<int>(EStatus::ESUCCESS);
 }
-
-
-int Microtar::Microtar::close(Tar &tar) {
-    return tar.file_close();
-}
-
 
 int Microtar::Microtar::seek(Tar &tar, const long pos) {
     int err = tar.file_seek(pos);
@@ -217,55 +203,48 @@ int Microtar::Microtar::rewind(Tar &tar) {
 }
 
 
-int Microtar::Microtar::next(Tar &tar) {
-    header_t h;
+int Microtar::Tar::next() {
     /* Load header */
-    const int err = Microtar::Microtar::read_header(tar, h);
+    const int err = read_header();
     if (err) {
         return err;
     }
     /* Seek to next record */
-    const int n = round_up(h.size, 512) + sizeof(raw_header_t);
-    return Microtar::Microtar::seek(tar, tar.pos + n);
+    const int n = round_up(header.size, 512) + sizeof(raw_header_t);
+    return Microtar::Microtar::seek(*this, this->pos + n);
 }
 
 
-int Microtar::Microtar::find(Tar &tar, const std::string &name, header_t &h) {
-    header_t header;
+int Microtar::Tar::find(const std::string &name) {
     /* Start at beginning */
-    int err = Microtar::Microtar::rewind(tar);
+    int err = Microtar::Microtar::rewind(*this);
     if (err) {
         return err;
     }
     /* Iterate all files until we hit an error or find the file */
-    while ((err = Microtar::Microtar::read_header(tar, header)) == static_cast<int>(EStatus::ESUCCESS)) {
-        if (!strcmp(header.name, name.c_str())) {
-            h = header;
+    while ((err = read_header()) == static_cast<int>(EStatus::ESUCCESS)) {
+        if (!strcmp(&header.name[0], name.c_str())) {
             return static_cast<int>(EStatus::ESUCCESS);
         }
-        Microtar::Microtar::next(tar);
+        next();
     }
     /* Return error */
     return err;
 }
 
 
-int Microtar::Microtar::read_header(Tar &tar, header_t &h) {
-    raw_header_t rh{};
+int Microtar::Tar::read_header() {
+    raw_header_t rh;
     /* Save header position */
-    tar.last_header = tar.pos;
+    last_header = pos;
     /* Read raw header */
-    int err = tread(tar, rh, sizeof(rh));
+    int err = tread(*this, rh, sizeof(rh));
     if (err) {
         return static_cast<int>(err);
     }
     /* Seek back to start of header */
-    err = Microtar::Microtar::seek(tar, tar.last_header);
-    if (err) {
-        return static_cast<int>(err);
-    }
-    /* Load raw header into header struct and return */
-    return raw_to_header(h, rh);
+    err = Microtar::Microtar::seek(*this, this->last_header);
+    return raw_to_header(header, rh);
 }
 
 template<typename T>
@@ -301,110 +280,57 @@ int Microtar::Microtar::read_data(Tar &tar, T &data, const size_t size) {
 }
 
 
-int Microtar::Microtar::write_header(Tar &tar, const header_t &h) {
-    raw_header_t rh = {};
+int Microtar::Tar::write_header() {
+    raw_header_t rh;
     /* Build raw header and write */
-    header_to_raw(rh, h);
-    tar.remaining_data = h.size;
-    return twrite(tar, rh, sizeof(rh));
+    header_to_raw(rh, header);
+    remaining_data = header.size;
+    return twrite(rh, sizeof(rh));
 }
 
+int Microtar::Tar::write_file_header(const std::string &name, const size_t size) {
+    strcpy(&header.name[0], name.c_str());
+    header.size = size;
+    header.type = static_cast<int>(EType::TREG);
+    header.mode = 0664;
+    /* Write header */
+    return write_header();
+}
 
-int Microtar::Microtar::write_file_header(Tar &tar, const std::string &name, const size_t size) {
-    header_t h = {};
+int Microtar::Tar::write_dir_header(const std::string &name) {
+    header_t h;
     /* Build header */
-    strcpy(h.name, name.c_str());
-    h.size = size;
-    h.type = '0'; // EType::TREG
+//    h.name = name;
+    strcpy(&h.name[0], name.c_str());
+    h.type = static_cast<char>(EType::TDIR);
     h.mode = 0664;
     /* Write header */
-    return Microtar::Microtar::write_header(tar, h);
+    return write_header();
 }
 
 
-int Microtar::Microtar::write_dir_header(Tar &tar, const std::string &name) {
-    header_t h = {};
-    /* Build header */
-    strcpy(h.name, name.data());
-    h.type = static_cast<char>(EType::TDIR);
-    h.mode = 0775;
-    /* Write header */
-    return Microtar::Microtar::write_header(tar, h);
-}
-
-
-int Microtar::Microtar::write_data(Tar &tar, const std::string &data, const size_t size) {
+int Microtar::Tar::write_data(const std::string &data, const size_t size) {
     /* Write data */
-    const int err = twrite(tar, data, size);
+    const int err = twrite(data, size);
     if (err) {
         return err;
     }
-    tar.remaining_data -= size;
+    remaining_data -= size;
     /* Write padding if we've written all the data for this file */
-    if (tar.remaining_data == 0) {
-        return write_null_bytes(tar, round_up(tar.pos, 512) - tar.pos);
+    if (remaining_data == 0) {
+        return write_null_bytes(round_up(pos, 512) - pos);
     }
     return static_cast<int>(EStatus::ESUCCESS);
 }
 
-
-int Microtar::Microtar::finalize(Tar &tar) {
-    /* Write two NULL records */
-    return write_null_bytes(tar, sizeof(raw_header_t) * 2);
-}
-
-void write(const std::string &filename) {
-    Microtar::Tar tar{};
-    std::ifstream fstream;
-    fstream.open(filename, std::ios_base::binary);
-    std::stringstream fcont;
-    fcont << fstream.rdbuf();
-    std::string fcontent(fcont.str());
-/* Open archive for writing */
-    Microtar::Microtar::open(tar, "test.tar", std::ios_base::out);
-
-/* Write strings to files `test1.txt` and `test2.txt` */
-    Microtar::Microtar::write_file_header(tar, filename, fcontent.size());
-    Microtar::Microtar::write_data(tar, fcontent, fcontent.size());
-
-/* Finalize -- this needs to be the last thing done before closing */
-    Microtar::Microtar::finalize(tar);
-
-/* Close archive */
-    Microtar::Microtar::close(tar);
-}
-
-void read(const std::string &filename) {
-    Microtar::Tar tar{};
-    Microtar::header_t h;
-/* Open archive for reading */
-    Microtar::Microtar::open(tar, "test.tar", std::ios_base::in);
-
-/* Print all file names and sizes */
-    while (Microtar::Microtar::read_header(tar, h) != static_cast<int>(Microtar::EStatus::ENULLRECORD)) {
-        printf("%s (%d bytes)\n", h.name, h.size);
-        Microtar::Microtar::next(tar);
-    }
-
-/* Load and print contents of file "test.txt" */
-    Microtar::Microtar::find(tar, filename, h);
-    std::string content(h.size, '\0');
-    Microtar::Microtar::read_data(tar, content, h.size);
-    std::ofstream ofstream;
-    ofstream.open(filename, std::ios_base::binary);
-    ofstream.write(content.c_str(), content.size());
-/* Close archive */
-    Microtar::Microtar::close(tar);
+void archiveFiles(std::string archive, const std::vector<std::string> &filenames) {
+    Microtar::Tar tar(archive);
+    tar.Write(filenames);
 }
 
 int main(int argc, char *argv[]) {
-//    if (argc < 2) {
-//        std::cerr << "Filename?\n";
-//        std::exit(-1);
-//    }
-//
-//    write(argv[1]);
-//    read(argv[1]);
+    std::vector<std::string> files = {argv + 2, argv + argc};
+    archiveFiles(argv[1], files);
 
     return 0;
 }
