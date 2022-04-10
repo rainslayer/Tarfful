@@ -174,7 +174,7 @@ int Microtar::Tar::file_close() {
 
 void Microtar::Tar::Write(const std::vector<std::string> &filenames) {
     fstream.open(archiveName, std::fstream::out | std::fstream::binary | std::fstream::app);
-    
+
     if (fstream.good()) {
         for (auto &filename: filenames) {
             std::ifstream ifstream;
@@ -329,8 +329,12 @@ void archiveFiles(std::string archive, const std::vector<std::string> &filenames
 }
 
 int main(int argc, char *argv[]) {
-    std::vector<std::string> files = {argv + 2, argv + argc};
-    archiveFiles(argv[1], files);
-
+    if (argc > 2) {
+        std::vector<std::string> files = {argv + 2, argv + argc};
+        archiveFiles(argv[1], files);
+    } else {
+        std::cerr << "Filename?\n";
+        std::exit(-1);
+    }
     return 0;
 }
