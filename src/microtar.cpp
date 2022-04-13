@@ -179,9 +179,7 @@ void Microtar::Tar::Write(const std::vector<std::string> &filenames) {
         for (auto &filename: filenames) {
             std::ifstream ifstream;
             ifstream.open(filename, std::fstream::in);
-            std::stringstream fileContentStream;
-            fileContentStream << ifstream.rdbuf();
-            std::string fileContent(fileContentStream.str());
+            std::string fileContent((std::istreambuf_iterator<char>(ifstream)), std::istreambuf_iterator<char>());
             write_file_header(filename, fileContent.size());
             write_data(fileContent, fileContent.size());
         }

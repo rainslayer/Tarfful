@@ -5,7 +5,6 @@
 #include <iostream>
 #include <fstream>
 #include <array>
-#include <sstream>
 #include <vector>
 
 namespace Microtar {
