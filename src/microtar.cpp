@@ -333,10 +333,10 @@ void extractFiles(std::string archive, const std::vector<std::string> &filenames
 }
 
 int main(int argc, char *argv[]) {
-    if (*argv[1] == 'c') {
+    if (std::string(argv[1]) == "c") {
         const std::vector<std::string> files = {argv + 3, argv + argc};
         archiveFiles(argv[2], files);
-    } else if (*argv[1] == 'x') {
+    } else if (std::string(argv[1]) == "x") {
         const std::vector<std::string> files = {argv + 3, argv + argc};
         extractFiles(argv[2], files);
     } else {

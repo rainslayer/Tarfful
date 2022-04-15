@@ -37,7 +37,7 @@ jobs:
           sudo apt-get install -y valgrind
           touch test
           echo "And I will strike down upon thee with great vengeance and furious anger" > test
-          valgrind -v --error-exitcode=1 --leak-check=full --show-leak-kinds=all --trace-children=yes ./microtar c 
+          valgrind -v --error-exitcode=1 --leak-check=full --show-leak-kinds=all --trace-children=yes ./microtar c \
           test.tar test
-          valgrind -v --error-exitcode=1 --leak-check=full --show-leak-kinds=all --trace-children=yes ./microtar x 
+          valgrind -v --error-exitcode=1 --leak-check=full --show-leak-kinds=all --trace-children=yes ./microtar x \
           test.tar test
