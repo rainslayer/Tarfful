@@ -40,10 +40,15 @@ unsigned checksum(Microtar::raw_header_t &rh) {
     return res;
 }
 
-template<typename T>
-int tread(Microtar::Tar &tar, T &data, const size_t size) {
-    const int err = tar.file_read(data, size);
-    tar.pos += size;
+int Microtar::Tar::tread(std::ofstream &outputFile, const size_t size) {
+    const int err = file_read(outputFile, size);
+    pos += size;
+    return err;
+}
+
+int Microtar::Tar::tread(Microtar::raw_header_t &rh, const size_t size) {
+    const int err = file_read(rh, size);
+    pos += size;
     return err;
 }
 
@@ -66,7 +71,7 @@ int Microtar::Tar::write_null_bytes(const int n) {
 }
 
 
-static int raw_to_header(Microtar::header_t &h, Microtar::raw_header_t &rh) {
+int raw_to_header(Microtar::header_t &h, Microtar::raw_header_t &rh) {
     /* If the checksum starts with a null byte we assume the record is NULL */
     if (rh.checksum[0] == '\0') {
         return static_cast<int>(Microtar::EStatus::ENULLRECORD);
@@ -108,32 +113,6 @@ static int header_to_raw(Microtar::raw_header_t &rh, const Microtar::header_t &h
     return static_cast<int>(Microtar::EStatus::ESUCCESS);
 }
 
-
-std::string Microtar::Microtar::strerror(const int err) {
-    switch (err) {
-        case static_cast<int>(EStatus::ESUCCESS):
-            return "success";
-        case static_cast<int>(EStatus::EFAILURE):
-            return "failure";
-        case static_cast<int>(EStatus::EOPENFAIL):
-            return "could not open";
-        case static_cast<int>(EStatus::EREADFAIL):
-            return "could not read";
-        case static_cast<int>(EStatus::EWRITEFAIL):
-            return "could not write";
-        case static_cast<int>(EStatus::ESEEKFAIL):
-            return "could not seek";
-        case static_cast<int>(EStatus::EBADCHKSUM):
-            return "bad checksum";
-        case static_cast<int>(EStatus::ENULLRECORD):
-            return "null record";
-        case static_cast<int>(EStatus::ENOTFOUND):
-            return "file not found";
-        default:
-            return "unknown error";
-    }
-}
-
 template<typename T>
 int Microtar::Tar::file_write(const T &data, const size_t size) {
     fstream.write(reinterpret_cast<const char *>(&data), size);
@@ -147,16 +126,15 @@ int Microtar::Tar::file_write(const std::string &data, const size_t size) {
     return static_cast<int>(EStatus::ESUCCESS);
 }
 
-template<typename T>
-int Microtar::Tar::file_read(T &data, const size_t size) {
-    fstream.read(reinterpret_cast<char *>(&data), size);
-
+int Microtar::Tar::file_read(std::ofstream &outputFile, const size_t size) {
+    std::string fileContent(size, '\0');
+    fstream.read(&fileContent[0], size);
+    outputFile.write(&fileContent[0], size);
     return static_cast<int>(EStatus::ESUCCESS);
 }
 
-int Microtar::Tar::file_read(std::string &data, const size_t size) {
-    fstream.read(&data[0], size);
-
+int Microtar::Tar::file_read(Microtar::raw_header_t &rh, const size_t size) {
+    fstream.read(reinterpret_cast<char *>(&rh), size);
     return static_cast<int>(EStatus::ESUCCESS);
 }
 
@@ -188,16 +166,30 @@ void Microtar::Tar::Write(const std::vector<std::string> &filenames) {
     }
 }
 
-int Microtar::Microtar::seek(Tar &tar, const long pos) {
-    int err = tar.file_seek(pos);
-    tar.pos = pos;
+void Microtar::Tar::Extract(const std::string &filename) {
+    if (!fs::exists(filename)) {
+        const fs::path filePath(filename);
+        const std::string parentPath = filePath.parent_path();
+        if (!parentPath.empty()) {
+            fs::create_directories(parentPath);
+        }
+    }
+
+    std::ofstream fileContent(filename, std::fstream::out | std::fstream::binary);
+    find(filename);
+    read_data(fileContent, header.size);
+}
+
+int Microtar::Tar::seek(const long newPos) {
+    int err = file_seek(newPos);
+    pos = newPos;
     return err;
 }
 
-int Microtar::Microtar::rewind(Tar &tar) {
-    tar.remaining_data = 0;
-    tar.last_header = 0;
-    return Microtar::Microtar::seek(tar, 0);
+int Microtar::Tar::rewind() {
+    remaining_data = 0;
+    last_header = 0;
+    return seek(0);
 }
 
 
@@ -209,13 +201,13 @@ int Microtar::Tar::next() {
     }
     /* Seek to next record */
     const int n = round_up(header.size, 512) + sizeof(raw_header_t);
-    return Microtar::Microtar::seek(*this, this->pos + n);
+    return seek(pos + n);
 }
 
 
 int Microtar::Tar::find(const std::string &name) {
     /* Start at beginning */
-    int err = Microtar::Microtar::rewind(*this);
+    int err = rewind();
     if (err) {
         return err;
     }
@@ -236,43 +228,42 @@ int Microtar::Tar::read_header() {
     /* Save header position */
     last_header = pos;
     /* Read raw header */
-    int err = tread(*this, rh, sizeof(rh));
+    int err = tread(rh, sizeof(rh));
     if (err) {
         return static_cast<int>(err);
     }
     /* Seek back to start of header */
-    err = Microtar::Microtar::seek(*this, this->last_header);
+    err = seek(last_header);
     return raw_to_header(header, rh);
 }
 
-template<typename T>
-int Microtar::Microtar::read_data(Tar &tar, T &data, const size_t size) {
+int Microtar::Tar::read_data(std::ofstream &outputFile, const size_t size) {
     /* If we have no remaining data then this is the first read, we get the size,
      * set the remaining data and seek to the beginning of the data */
-    if (tar.remaining_data == 0) {
+    if (remaining_data == 0) {
         header_t h;
         /* Read header */
-        int err = Microtar::Microtar::read_header(tar, h);
+        int err = read_header();
         if (err) {
             return err;
         }
         /* Seek past header and init remaining data */
-        err = Microtar::Microtar::seek(tar, tar.pos + sizeof(raw_header_t));
+        err = seek(pos + sizeof(raw_header_t));
         if (err) {
             return err;
         }
-        tar.remaining_data = h.size;
+        remaining_data = h.size;
     }
     /* Read data */
-    int err = tread(tar, data, size);
+    int err = tread(outputFile, size);
     if (err) {
         return err;
     }
-    tar.remaining_data -= size;
+    remaining_data -= size;
     /* If there is no remaining data we've finished reading and seek back to the
      * header */
-    if (tar.remaining_data == 0) {
-        return Microtar::Microtar::seek(tar, tar.last_header);
+    if (remaining_data == 0) {
+        return seek(last_header);
     }
     return static_cast<int>(EStatus::ESUCCESS);
 }
@@ -298,7 +289,6 @@ int Microtar::Tar::write_file_header(const std::string &name, const size_t size)
 int Microtar::Tar::write_dir_header(const std::string &name) {
     header_t h;
     /* Build header */
-//    h.name = name;
     strcpy(&h.name[0], name.c_str());
     h.type = static_cast<char>(EType::TDIR);
     h.mode = 0664;
@@ -321,15 +311,34 @@ int Microtar::Tar::write_data(const std::string &data, const size_t size) {
     return static_cast<int>(EStatus::ESUCCESS);
 }
 
+/*TODO: check whether path has directories, split it and ?handle separately?, write dir headers
+ * ?Set Filemodes?*/
 void archiveFiles(std::string archive, const std::vector<std::string> &filenames) {
-    Microtar::Tar tar(archive);
+    Microtar::Tar tar(std::move(archive));
     tar.Write(filenames);
 }
 
+/* TODO: recursive directory extraction */
+void extractFiles(std::string archive, const std::vector<std::string> &filenames) {
+    Microtar::Tar tar(std::move(archive));
+    tar.fstream.open(tar.archiveName, std::fstream::in | std::fstream::binary);
+
+    if (tar.fstream.good()) {
+        for (const auto &i: filenames) {
+            tar.Extract(i);
+        }
+    } else {
+        std::cerr << tar.fstream.rdstate() << '\n';
+    }
+}
+
 int main(int argc, char *argv[]) {
-    if (argc > 2) {
-        std::vector<std::string> files = {argv + 2, argv + argc};
-        archiveFiles(argv[1], files);
+    if (*argv[1] == 'c') {
+        const std::vector<std::string> files = {argv + 3, argv + argc};
+        archiveFiles(argv[2], files);
+    } else if (*argv[1] == 'x') {
+        const std::vector<std::string> files = {argv + 3, argv + argc};
+        extractFiles(argv[2], files);
     } else {
         std::cerr << "Filename?\n";
         std::exit(-1);

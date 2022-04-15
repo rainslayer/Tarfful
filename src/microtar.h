@@ -6,6 +6,9 @@
 #include <fstream>
 #include <array>
 #include <vector>
+#include <experimental/filesystem>
+
+namespace fs = std::experimental::filesystem;
 
 namespace Microtar {
     using Byte = char;
@@ -44,7 +47,6 @@ namespace Microtar {
         unsigned char type = '\0';
         std::array<Byte, 100> linkname = {};
         std::array<Byte, 255> _padding = {};
-        
     } raw_header_t;
 
     typedef struct header_t {
@@ -81,10 +83,9 @@ namespace Microtar {
 
         int file_write(const std::string &data, size_t size);
 
-        template<typename T>
-        int file_read(T &data, size_t size);
+        int file_read(std::ofstream &outputFile, size_t size);
 
-        int file_read(std::string &data, size_t size);
+        int file_read(raw_header_t &rh, size_t size);
 
         int file_seek(long offset);
 
@@ -100,29 +101,22 @@ namespace Microtar {
 
         void Write(const std::vector<std::string> &filenames);
 
+        void Extract(const std::string &filename);
+
         int read_header();
 
         int next();
 
         int find(const std::string &name);
-    };
 
-    class Microtar {
-    private:
-        Microtar() = default;
+        int seek(const long pos);
 
-        ~Microtar() = default;
+        int read_data(std::ofstream &outputFile, const size_t size);
 
-    public:
-        static std::string strerror(int err);
+        int rewind();
 
-        static int seek(Tar &tar, long pos);
+        int tread(std::ofstream &outputFile, const size_t size);
 
-        static int rewind(Tar &tar);
-
-        static int read_header(Tar &tar, header_t &h);
-
-        template<typename T>
-        static int read_data(Tar &tar, T &data, size_t size);
+        int tread(raw_header_t &rh, const size_t size);
     };
 }
