@@ -89,8 +89,6 @@ namespace Microtar {
 
         int file_seek(long offset);
 
-        int file_close();
-
         std::fstream fstream;
         std::string archiveName;
         size_t pos = 0;
@@ -102,6 +100,8 @@ namespace Microtar {
         void Write(const std::vector<std::string> &filenames);
 
         void Extract(const std::string &filename);
+
+        void ExtractAll();
 
         int read_header();
 
