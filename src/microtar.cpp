@@ -1,25 +1,3 @@
-/*
- * Copyright (c) 2017 rxi
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to
- * deal in the Software without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
- */
-
 #include "microtar.h"
 
 unsigned round_up(const unsigned &n, const unsigned &incr) {
@@ -126,27 +104,31 @@ int Microtar::Tar::file_write(const std::string &data, const size_t size) {
     return static_cast<int>(EStatus::ESUCCESS);
 }
 
-int Microtar::Tar::file_read(std::ofstream &outputFile, const size_t size) {
-    std::string fileContent(size, '\0');
-    fstream.read(&fileContent[0], size);
+int Microtar::Tar:: file_read(std::ofstream &outputFile, const size_t size) {
+    std::string fileContent((std::istreambuf_iterator<char>(fstream)), std::istreambuf_iterator<char>());
     outputFile.write(&fileContent[0], size);
+
+    if (fstream.bad()) {
+        return static_cast<int>(EStatus::EREADFAIL);
+    }
     return static_cast<int>(EStatus::ESUCCESS);
 }
 
 int Microtar::Tar::file_read(Microtar::raw_header_t &rh, const size_t size) {
     fstream.read(reinterpret_cast<char *>(&rh), size);
+
+    if (fstream.bad()) {
+        return static_cast<int>(EStatus::EREADFAIL);
+    }
     return static_cast<int>(EStatus::ESUCCESS);
 }
 
 int Microtar::Tar::file_seek(const long offset) {
     fstream.seekg(offset, std::ios_base::beg);
 
-    return static_cast<int>(EStatus::ESUCCESS);
-}
-
-int Microtar::Tar::file_close() {
-    fstream.close();
-
+    if (fstream.bad()) {
+        return static_cast<int>(EStatus::ESEEKFAIL);
+    }
     return static_cast<int>(EStatus::ESUCCESS);
 }
 
@@ -155,6 +137,8 @@ void Microtar::Tar::Write(const std::vector<std::string> &filenames) {
 
     if (fstream.good()) {
         for (auto &filename: filenames) {
+            if (fs::is_directory(filename)) continue;
+
             std::ifstream ifstream;
             ifstream.open(filename, std::fstream::in);
             std::string fileContent((std::istreambuf_iterator<char>(ifstream)), std::istreambuf_iterator<char>());
@@ -168,8 +152,7 @@ void Microtar::Tar::Write(const std::vector<std::string> &filenames) {
 
 void Microtar::Tar::Extract(const std::string &filename) {
     if (!fs::exists(filename)) {
-        const fs::path filePath(filename);
-        const std::string parentPath = filePath.parent_path();
+        const fs::path parentPath = fs::path(filename).parent_path();
         if (!parentPath.empty()) {
             fs::create_directories(parentPath);
         }
@@ -178,6 +161,27 @@ void Microtar::Tar::Extract(const std::string &filename) {
     std::ofstream fileContent(filename, std::fstream::out | std::fstream::binary);
     find(filename);
     read_data(fileContent, header.size);
+}
+
+void Microtar::Tar::ExtractAll() {
+    if (!this->fstream.is_open()) {
+        fstream.open(archiveName, std::fstream::in | std::fstream::binary);
+    }
+
+    while (read_header() != static_cast<int>(Microtar::EStatus::ENULLRECORD) ) {
+        const std::string filename = header.name.data();
+        const fs::path parentPath = fs::path(filename).parent_path();
+        if (!parentPath.empty() && !fs::exists(parentPath)) {
+            fs::create_directories(parentPath);
+        }
+
+        std::ofstream fileContent(filename, std::fstream::out | std::fstream::binary);
+        read_data(fileContent, header.size);
+        pos = last_header;
+        remaining_data = 0;
+
+        next();
+    }
 }
 
 int Microtar::Tar::seek(const long newPos) {
@@ -194,11 +198,6 @@ int Microtar::Tar::rewind() {
 
 
 int Microtar::Tar::next() {
-    /* Load header */
-    const int err = read_header();
-    if (err) {
-        return err;
-    }
     /* Seek to next record */
     const int n = round_up(header.size, 512) + sizeof(raw_header_t);
     return seek(pos + n);
@@ -234,6 +233,10 @@ int Microtar::Tar::read_header() {
     }
     /* Seek back to start of header */
     err = seek(last_header);
+
+    if (err) {
+        return err;
+    }
     return raw_to_header(header, rh);
 }
 
@@ -311,16 +314,13 @@ int Microtar::Tar::write_data(const std::string &data, const size_t size) {
     return static_cast<int>(EStatus::ESUCCESS);
 }
 
-/*TODO: check whether path has directories, split it and ?handle separately?, write dir headers
- * ?Set Filemodes?*/
 void archiveFiles(std::string archive, const std::vector<std::string> &filenames) {
-    Microtar::Tar tar(std::move(archive));
+    Microtar::Tar tar(archive);
     tar.Write(filenames);
 }
 
-/* TODO: recursive directory extraction */
 void extractFiles(std::string archive, const std::vector<std::string> &filenames) {
-    Microtar::Tar tar(std::move(archive));
+    Microtar::Tar tar(archive);
     tar.fstream.open(tar.archiveName, std::fstream::in | std::fstream::binary);
 
     if (tar.fstream.good()) {
@@ -339,6 +339,9 @@ int main(int argc, char *argv[]) {
     } else if (std::string(argv[1]) == "x") {
         const std::vector<std::string> files = {argv + 3, argv + argc};
         extractFiles(argv[2], files);
+    } else if (std::string(argv[1]) == "xx") {
+        Microtar::Tar tar(argv[2]);
+        tar.ExtractAll();
     } else {
         std::cerr << "Filename?\n";
         std::exit(-1);
