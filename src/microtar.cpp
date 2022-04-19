@@ -171,7 +171,7 @@ void Microtar::Tar::ExtractAll() {
     while (read_header() != static_cast<int>(Microtar::EStatus::ENULLRECORD) ) {
         const std::string filename = header.name.data();
         const fs::path parentPath = fs::path(filename).parent_path();
-        if (!parentPath.empty()) {
+        if (!parentPath.empty() && !fs::exists(parentPath)) {
             fs::create_directories(parentPath);
         }
 
