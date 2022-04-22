@@ -37,16 +37,16 @@ namespace Microtar {
 
     typedef struct raw_header_t {
     public:
-        std::array<Byte, 100> name = {};
-        std::array<Byte, 8> mode = {};
-        std::array<Byte, 8> owner = {};
-        std::array<Byte, 8> group = {};
-        std::array<Byte, 12> size = {};
-        std::array<Byte, 12> mtime = {};
-        std::array<Byte, 8> checksum = {};
+        Byte name[100] = {};
+        Byte mode[8] = {};
+        Byte owner[8] = {};
+        Byte group[8] = {};
+        Byte size[12] = {};
+        Byte mtime[12] = {};
+        Byte checksum[8] = {};
         unsigned char type = '\0';
-        std::array<Byte, 100> linkname = {};
-        std::array<Byte, 255> _padding = {};
+        Byte linkname[100] = {};
+        Byte _padding[255] = {};
     } raw_header_t;
 
     typedef struct header_t {
@@ -56,8 +56,8 @@ namespace Microtar {
         unsigned size = 0;
         unsigned mtime = 0;
         unsigned type = 0;
-        std::array<Byte, 100> name = {};
-        std::array<Byte, 100> linkname = {};
+        Byte name[100] = {};
+        Byte linkname[100] = {};
     } header_t;
 
     class Tar {

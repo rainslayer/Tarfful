@@ -20,6 +20,7 @@ unsigned checksum(Microtar::raw_header_t &rh) {
 
 int Microtar::Tar::tread(std::ofstream &outputFile, const size_t size) {
     const int err = file_read(outputFile, size);
+    std::cout << 2 << '\n';
     pos += size;
     return err;
 }
@@ -68,8 +69,8 @@ int raw_to_header(Microtar::header_t &h, Microtar::raw_header_t &rh) {
     h.mtime = strtoul(&rh.mtime[0], nullptr, 8);
 
     h.type = rh.type;
-    strncpy(&h.name[0], &rh.name[0], h.name.size());
-    strncpy(&h.linkname[0], &rh.linkname[0], h.linkname.size());
+    strncpy(&h.name[0], &rh.name[0], sizeof(h.name));
+    strncpy(&h.linkname[0], &rh.linkname[0], sizeof(h.linkname));
 
     return static_cast<int>(Microtar::EStatus::ESUCCESS);
 }
@@ -80,8 +81,8 @@ static int header_to_raw(Microtar::raw_header_t &rh, const Microtar::header_t &h
     sprintf(&rh.size[0], "%o", h.size);
     sprintf(&rh.mtime[0], "%o", h.mtime);
     rh.type = h.type ? h.type : static_cast<char>(Microtar::EType::TREG);
-    strncpy(&rh.name[0], &h.name[0], rh.name.size());
-    strncpy(&rh.linkname[0], &h.linkname[0], rh.linkname.size());
+    strncpy(&rh.name[0], &h.name[0], sizeof(rh.name));
+    strncpy(&rh.linkname[0], &h.linkname[0], sizeof(rh.linkname));
 
     /* Calculate and write checksum */
     const unsigned chksum = checksum(rh);
@@ -137,13 +138,25 @@ void Microtar::Tar::Write(const std::vector<std::string> &filenames) {
 
     if (fstream.good()) {
         for (auto &filename: filenames) {
-            if (fs::is_directory(filename)) continue;
+            if (fs::is_directory(filename)) {
+                for (const auto& entry :  fs::recursive_directory_iterator(filename)) {
+                    if (fs::is_directory(entry)) {
+                        continue;
+                    }
 
-            std::ifstream ifstream;
-            ifstream.open(filename, std::fstream::in);
-            std::string fileContent((std::istreambuf_iterator<char>(ifstream)), std::istreambuf_iterator<char>());
-            write_file_header(filename, fileContent.size());
-            write_data(fileContent, fileContent.size());
+                    std::ifstream ifstream;
+                    ifstream.open(entry.path(), std::fstream::in);
+                    std::string fileContent((std::istreambuf_iterator<char>(ifstream)), std::istreambuf_iterator<char>());
+                    write_file_header(entry.path(), fileContent.size());
+                    write_data(fileContent, fileContent.size());
+                }
+            } else {
+                std::ifstream ifstream;
+                ifstream.open(filename, std::fstream::in);
+                std::string fileContent((std::istreambuf_iterator<char>(ifstream)), std::istreambuf_iterator<char>());
+                write_file_header(filename, fileContent.size());
+                write_data(fileContent, fileContent.size());
+            }
         }
     } else {
         std::cerr << fstream.rdstate() << '\n';
@@ -153,7 +166,7 @@ void Microtar::Tar::Write(const std::vector<std::string> &filenames) {
 void Microtar::Tar::Extract(const std::string &filename) {
     if (!fs::exists(filename)) {
         const fs::path parentPath = fs::path(filename).parent_path();
-        if (!parentPath.empty()) {
+        if (!fs::exists(parentPath)) {
             fs::create_directories(parentPath);
         }
     }
@@ -169,9 +182,10 @@ void Microtar::Tar::ExtractAll() {
     }
 
     while (read_header() != static_cast<int>(Microtar::EStatus::ENULLRECORD) ) {
-        const std::string filename = header.name.data();
+        const std::string filename = header.name;
+        std::cout << filename << '\n';
         const fs::path parentPath = fs::path(filename).parent_path();
-        if (!parentPath.empty() && !fs::exists(parentPath)) {
+        if (!fs::exists(parentPath)) {
             fs::create_directories(parentPath);
         }
 
@@ -258,6 +272,7 @@ int Microtar::Tar::read_data(std::ofstream &outputFile, const size_t size) {
         remaining_data = h.size;
     }
     /* Read data */
+    std::cout << 1 << '\n';
     int err = tread(outputFile, size);
     if (err) {
         return err;
