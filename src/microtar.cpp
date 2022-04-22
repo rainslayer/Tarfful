@@ -20,7 +20,6 @@ unsigned checksum(Microtar::raw_header_t &rh) {
 
 int Microtar::Tar::tread(std::ofstream &outputFile, const size_t size) {
     const int err = file_read(outputFile, size);
-    std::cout << 2 << '\n';
     pos += size;
     return err;
 }
@@ -106,7 +105,8 @@ int Microtar::Tar::file_write(const std::string &data, const size_t size) {
 }
 
 int Microtar::Tar:: file_read(std::ofstream &outputFile, const size_t size) {
-    std::string fileContent((std::istreambuf_iterator<char>(fstream)), std::istreambuf_iterator<char>());
+    std::string fileContent(size, '\0');
+    fstream.read(&fileContent[0], size);
     outputFile.write(&fileContent[0], size);
 
     if (fstream.bad()) {
@@ -140,10 +140,10 @@ void Microtar::Tar::Write(const std::vector<std::string> &filenames) {
         for (auto &filename: filenames) {
             if (fs::is_directory(filename)) {
                 for (const auto& entry :  fs::recursive_directory_iterator(filename)) {
+                    std::cout << entry << '\n';
                     if (fs::is_directory(entry)) {
                         continue;
                     }
-
                     std::ifstream ifstream;
                     ifstream.open(entry.path(), std::fstream::in);
                     std::string fileContent((std::istreambuf_iterator<char>(ifstream)), std::istreambuf_iterator<char>());
@@ -272,7 +272,6 @@ int Microtar::Tar::read_data(std::ofstream &outputFile, const size_t size) {
         remaining_data = h.size;
     }
     /* Read data */
-    std::cout << 1 << '\n';
     int err = tread(outputFile, size);
     if (err) {
         return err;
