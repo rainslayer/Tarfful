@@ -41,3 +41,5 @@ jobs:
           test.tar test
           valgrind -v --error-exitcode=1 --leak-check=full --show-leak-kinds=all --trace-children=yes ./microtar x \
           test.tar test
+          valgrind -v --error-exitcode=1 --leak-check=full --show-leak-kinds=all --trace-children=yes ./microtar xx \
+          test.tar
