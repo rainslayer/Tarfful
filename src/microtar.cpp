@@ -211,8 +211,8 @@ int Microtar::Tar::ExtractAll() {
                 std::cout << filename << '\n';
             #endif
 
-            const fs::path parentPath = fs::path(filename).parent_path();
-            if (!fs::exists(parentPath)) {
+            const std::string parentPath = fs::path(filename).parent_path();
+            if (!parentPath.empty() && !fs::exists(parentPath)) {
                 fs::create_directories(parentPath);
             }
 
