@@ -1,3 +1,0 @@
-/home/glacier/projects/c++/Tarfful/build/CMakeFiles/tarfful.dir
-/home/glacier/projects/c++/Tarfful/build/CMakeFiles/edit_cache.dir
-/home/glacier/projects/c++/Tarfful/build/CMakeFiles/rebuild_cache.dir

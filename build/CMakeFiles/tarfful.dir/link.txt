@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/tarfful.dir/src/tarfful.cpp.o -o tarfful  -lstdc++fs 
