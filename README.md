@@ -37,5 +37,5 @@ Maybe tomorrow, maybe never
 Tested only once on old rusty 7200 RPM HDD with 🤡430M Node.js🤡 project so doesn't claim to be exemplary
 ```
 GNU tar: tar cf tar-test.tar api/  0.23s user 2.27s system 1% cpu 2:24.82 total
-Tarfful: ./tarfful c tarfful-test.tar api  29.01s user 2.72s system 22% cpu 2:22.08 total
+Tarfful: ./tarfful c tarfful-test.tar api/  29.01s user 2.72s system 22% cpu 2:22.08 total
 ```
