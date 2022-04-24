@@ -370,6 +370,7 @@ int Microtar::Tar::write_file_header(const std::string &name, const size_t &size
 
     #ifdef __linux__
         struct stat info = {};
+
         stat(name.data(), &info);
         struct passwd *pw = getpwuid(info.st_uid);
         struct group  *gr = getgrgid(info.st_gid);
@@ -389,7 +390,7 @@ int Microtar::Tar::write_file_header(const std::string &name, const size_t &size
         } else if (S_ISFIFO(info.st_mode)) {
             header.type = 6;
         };
-#endif
+    #endif
 
     const auto mtime = std::chrono::time_point_cast<std::chrono::seconds>(fs::last_write_time(name));
     header.mtime = mtime.time_since_epoch().count();
