@@ -15,7 +15,7 @@
     #include <sys/stat.h>
 #endif
 
-namespace Microtar {
+namespace Tarfful {
     namespace fs = std::experimental::filesystem;
 
     using Byte = char;
@@ -78,7 +78,7 @@ namespace Microtar {
 
         int write_null_bytes(const size_t &n);
 
-        int raw_to_header(Microtar::raw_header_t &rh);
+        int raw_to_header(Tarfful::raw_header_t &rh);
 
         template<typename T>
         int file_write(const T &data, const size_t &size);
