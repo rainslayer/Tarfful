@@ -412,31 +412,6 @@ int Microtar::Tar::write_data(const std::string &data, const size_t &size) {
     return static_cast<int>(EStatus::ESUCCESS);
 }
 
-void archiveFiles(const std::string &archive, const std::string &path) {
-    Microtar::Tar tar(archive);
-    tar.Archive(path);
-}
-
-void extractFiles(const std::string &archive, const std::vector<std::string> &filenames) {
-    Microtar::Tar tar(archive);
-
-    for (const auto &i: filenames) {
-        tar.Extract(i);
-    }
-}
-
-int main(int argc, char *argv[]) {
-    if (std::string(argv[1]) == "c") {
-        archiveFiles(argv[2], std::string(argv[3]));
-    } else if (std::string(argv[1]) == "x") {
-        const std::vector<std::string> files = {argv + 3, argv + argc};
-        extractFiles(argv[2], files);
-    } else if (std::string(argv[1]) == "xx") {
-        Microtar::Tar tar(argv[2]);
-        tar.ExtractAll();
-    } else {
-        std::cerr << "Filename?\n";
-        std::exit(-1);
-    }
+int main() {
     return 0;
 }
