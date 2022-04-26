@@ -59,7 +59,7 @@ namespace Tarfful {
 
     class Tar {
     private:
-        header_t header;
+        header_t *header = new header_t{};
         std::fstream fstream;
         std::string archive_name;
         size_t pos = 0;
@@ -71,23 +71,23 @@ namespace Tarfful {
 
         int write_file_header(const std::string &name, const size_t &size);
 
-        template<typename T>
-        int twrite(const T &data, const size_t &size);
+        int twrite(raw_header_t *rh, const size_t &size);
+
+        int twrite(const std::string &data, const size_t &size);
 
         int write_data(const std::string &data, const size_t &size);
 
         int write_null_bytes(const size_t &n);
 
-        int raw_to_header(Tarfful::raw_header_t &rh);
+        int raw_to_header(Tarfful::raw_header_t *rh);
 
-        template<typename T>
-        int file_write(const T &data, const size_t &size);
+        int file_write(raw_header_t *rh, const size_t &size);
 
         int file_write(const std::string &data, const size_t &size);
 
         int file_read(std::ofstream &outputFile, const size_t &size);
 
-        int file_read(raw_header_t &rh, const size_t &size);
+        int file_read(raw_header_t *rh, const size_t &size);
 
         int file_seek(const size_t &offset);
 
@@ -105,10 +105,14 @@ namespace Tarfful {
 
         int tread(std::ofstream &outputFile, const size_t &size);
 
-        int tread(raw_header_t &rh);
+        int tread(raw_header_t *rh);
 
     public:
         explicit Tar(std::string archive) : archive_name(std::move(archive)) {};
+
+        ~Tar() {
+            delete header;
+        }
 
         int Archive(const std::string &path);
 
