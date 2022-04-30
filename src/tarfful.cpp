@@ -4,9 +4,9 @@ size_t round_up(const size_t &n, const size_t &incr) {
   return n + (incr - n % incr) % incr;
 }
 
-size_t checksum(std::unique_ptr<Tarfful::raw_header_t> &rh) {
+size_t checksum(Tarfful::raw_header_t *rh) {
   std::array<Tarfful::Byte, sizeof(Tarfful::raw_header_t)> headerPtr;
-  std::memcpy(headerPtr.data(), rh.get(), sizeof(Tarfful::raw_header_t));
+  std::memcpy(headerPtr.data(), rh, sizeof(Tarfful::raw_header_t));
 
   unsigned res = 256;
   for (size_t i = 0, offset = offsetof(Tarfful::raw_header_t, checksum);
@@ -26,14 +26,13 @@ int Tarfful::Tar::tread(std::ofstream &outputFile, const size_t &size) {
   return err;
 }
 
-int Tarfful::Tar::tread(std::unique_ptr<raw_header_t> &rh) {
+int Tarfful::Tar::tread(raw_header_t *rh) {
   const int err = file_read(rh, 512);
   pos += 512;
   return err;
 }
 
-int Tarfful::Tar::twrite(std::unique_ptr<raw_header_t> &rh,
-                         const size_t &size) {
+int Tarfful::Tar::twrite(raw_header_t *rh, const size_t &size) {
   const int err = file_write(rh, size);
   pos += size;
   return err;
@@ -55,7 +54,7 @@ int Tarfful::Tar::write_null_bytes(const size_t &n) {
   return static_cast<int>(EStatus::ESUCCESS);
 }
 
-int Tarfful::Tar::raw_to_header(std::unique_ptr<raw_header_t> &rh) {
+int Tarfful::Tar::raw_to_header(raw_header_t *rh) {
   /* If the checksum starts with a null byte we assume the record is NULL */
   if (rh->checksum[0] == '\0') {
     return static_cast<int>(Tarfful::EStatus::ENULLRECORD);
@@ -78,8 +77,7 @@ int Tarfful::Tar::raw_to_header(std::unique_ptr<raw_header_t> &rh) {
   return static_cast<int>(Tarfful::EStatus::ESUCCESS);
 }
 
-int header_to_raw(std::unique_ptr<Tarfful::raw_header_t> &rh,
-                  const std::unique_ptr<Tarfful::header_t> &h) {
+int header_to_raw(Tarfful::raw_header_t *rh, Tarfful::header_t *h) {
   sprintf(&rh->mode[0], "%zo", h->mode);
   sprintf(&rh->owner[0], "%zo", h->owner);
   sprintf(&rh->group[0], "%zo", h->group);
@@ -96,11 +94,10 @@ int header_to_raw(std::unique_ptr<Tarfful::raw_header_t> &rh,
   return static_cast<int>(Tarfful::EStatus::ESUCCESS);
 }
 
-int Tarfful::Tar::file_write(std::unique_ptr<raw_header_t> &rh,
-                             const size_t &size) {
+int Tarfful::Tar::file_write(raw_header_t *rh, const size_t &size) {
 
-  std::array<Byte, sizeof(Tarfful::raw_header_t)> dest;
-  std::memcpy(dest.data(), rh.get(), size);
+  std::array<Byte, sizeof(raw_header_t)> dest;
+  std::memcpy(dest.data(), rh, sizeof(raw_header_t));
   fstream.write(dest.data(), size);
 
   if (fstream.bad()) {
@@ -131,11 +128,11 @@ int Tarfful::Tar::file_read(std::ofstream &outputFile, const size_t &size) {
   return static_cast<int>(EStatus::ESUCCESS);
 }
 
-int Tarfful::Tar::file_read(std::unique_ptr<raw_header_t> &rh,
-                            const size_t &size) {
-  std::array<Byte, sizeof(Tarfful::raw_header_t)> dest;
-  std::memcpy(dest.data(), rh.get(), size);
+int Tarfful::Tar::file_read(raw_header_t *rh, const size_t &size) {
+  std::array<Byte, sizeof(raw_header_t)> dest;
+  std::memcpy(dest.data(), rh, sizeof(raw_header_t));
   fstream.read(dest.data(), size);
+  std::memcpy(rh, dest.data(), sizeof(raw_header_t));
 
   if (fstream.bad()) {
     return static_cast<int>(EStatus::EREADFAIL);
@@ -324,7 +321,7 @@ int Tarfful::Tar::read_header() {
   /* Save header position */
   last_header = pos;
   /* Read raw header */
-  int err = tread(rh);
+  int err = tread(rh.get());
   if (err) {
     return static_cast<int>(err);
   }
@@ -334,7 +331,7 @@ int Tarfful::Tar::read_header() {
   if (err) {
     return err;
   }
-  err = raw_to_header(rh);
+  err = raw_to_header(rh.get());
   return err;
 }
 
@@ -372,9 +369,9 @@ int Tarfful::Tar::read_data(std::ofstream &outputFile, const size_t &size) {
 int Tarfful::Tar::write_header() {
   std::unique_ptr<raw_header_t> rh(new raw_header_t);
   /* Build raw header and write */
-  header_to_raw(rh, header);
+  header_to_raw(rh.get(), header.get());
   remaining_data = header->size;
-  const int err = twrite(rh, sizeof(*rh));
+  const int err = twrite(rh.get(), sizeof(*rh));
   return err;
 }
 
@@ -429,6 +426,8 @@ int Tarfful::Tar::write_data(const std::string &data, const size_t &size) {
 
 int main(int argc, char *argv[]) {
   std::unique_ptr<Tarfful::Tar> tar(new Tarfful::Tar("test.tar"));
+  tar->Archive(argv[1]);
+  tar->Extract(argv[2]);
   tar->ExtractAll();
   return 0;
 }
