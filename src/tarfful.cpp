@@ -307,7 +307,7 @@ int Tarfful::Tar::find(const std::string &name) {
   }
   /* Iterate all files until we hit an error or find the file */
   while ((err = read_header()) == static_cast<int>(EStatus::ESUCCESS)) {
-    if (!strcmp(&header->name[0], name.data())) {
+    if (!strcmp(header->name.data(), name.data())) {
       return static_cast<int>(EStatus::ESUCCESS);
     }
     next();
@@ -427,7 +427,6 @@ int Tarfful::Tar::write_data(const std::string &data, const size_t &size) {
 int main(int argc, char *argv[]) {
   std::unique_ptr<Tarfful::Tar> tar(new Tarfful::Tar("test.tar"));
   tar->Archive(argv[1]);
-  tar->Extract(argv[2]);
   tar->ExtractAll();
   return 0;
 }

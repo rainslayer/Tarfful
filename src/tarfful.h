@@ -109,7 +109,7 @@ private:
 
 public:
   explicit Tar(const std::string &archive)
-      : archive_name(std::move(archive)), header(new header_t){};
+      : header(new header_t), archive_name(std::move(archive)){};
 
   int Archive(const std::string &path);
 
