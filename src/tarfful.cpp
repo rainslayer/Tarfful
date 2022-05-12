@@ -4,9 +4,9 @@ size_t round_up(const size_t &n, const size_t &incr) {
   return n + (incr - n % incr) % incr;
 }
 
-size_t checksum(Tarfful::raw_header_t *rh) {
+size_t checksum(const Tarfful::raw_header_t &rh) {
   std::array<Tarfful::Byte, sizeof(Tarfful::raw_header_t)> headerPtr;
-  std::memcpy(headerPtr.data(), rh, sizeof(Tarfful::raw_header_t));
+  std::memcpy(headerPtr.data(), &rh, sizeof(Tarfful::raw_header_t));
 
   unsigned res = 256;
   for (size_t i = 0, offset = offsetof(Tarfful::raw_header_t, checksum);
@@ -26,13 +26,13 @@ int Tarfful::Tar::tread(std::ofstream &outputFile, const size_t &size) {
   return err;
 }
 
-int Tarfful::Tar::tread(raw_header_t *rh) {
+int Tarfful::Tar::tread(raw_header_t &rh) {
   const int err = file_read(rh, 512);
   pos += 512;
   return err;
 }
 
-int Tarfful::Tar::twrite(raw_header_t *rh, const size_t &size) {
+int Tarfful::Tar::twrite(const raw_header_t &rh, const size_t &size) {
   const int err = file_write(rh, size);
   pos += size;
   return err;
@@ -54,50 +54,49 @@ int Tarfful::Tar::write_null_bytes(const size_t &n) {
   return static_cast<int>(EStatus::ESUCCESS);
 }
 
-int Tarfful::Tar::raw_to_header(raw_header_t *rh) {
+int Tarfful::Tar::raw_to_header(const raw_header_t &rh) {
   /* If the checksum starts with a null byte we assume the record is NULL */
-  if (rh->checksum[0] == '\0') {
+  if (rh.checksum[0] == '\0') {
     return static_cast<int>(Tarfful::EStatus::ENULLRECORD);
   }
 
   /* Build and compare checksum */
   const unsigned chksum1 = checksum(rh);
-  const unsigned chksum2 = strtoul(&rh->checksum[0], nullptr, 8);
+  const unsigned chksum2 = strtoul(&rh.checksum[0], nullptr, 8);
   if (chksum1 != chksum2) {
     return static_cast<int>(Tarfful::EStatus::EBADCHKSUM);
   }
 
-  header->mode = strtoul(&rh->mode[0], nullptr, 8);
-  header->owner = strtoul(&rh->owner[0], nullptr, 8);
-  header->size = strtoul(&rh->size[0], nullptr, 8);
-  header->mtime = strtoul(&rh->mtime[0], nullptr, 8);
-  strncpy(&header->name[0], &rh->name[0], header->name.size());
-  strncpy(&header->linkname[0], &rh->linkname[0], header->linkname.size());
+  header->mode = strtoul(&rh.mode[0], nullptr, 8);
+  header->owner = strtoul(&rh.owner[0], nullptr, 8);
+  header->size = strtoul(&rh.size[0], nullptr, 8);
+  header->mtime = strtoul(&rh.mtime[0], nullptr, 8);
+  strncpy(&header->name[0], &rh.name[0], header->name.size());
+  strncpy(&header->linkname[0], &rh.linkname[0], header->linkname.size());
 
   return static_cast<int>(Tarfful::EStatus::ESUCCESS);
 }
 
-int header_to_raw(Tarfful::raw_header_t *rh, Tarfful::header_t *h) {
-  sprintf(&rh->mode[0], "%zo", h->mode);
-  sprintf(&rh->owner[0], "%zo", h->owner);
-  sprintf(&rh->group[0], "%zo", h->group);
-  sprintf(&rh->size[0], "%zo", h->size);
-  sprintf(&rh->mtime[0], "%zo", h->mtime);
-  strncpy(&rh->name[0], &h->name[0], rh->name.size());
-  strncpy(&rh->linkname[0], &h->linkname[0], rh->linkname.size());
-  rh->type = h->type;
+int header_to_raw(Tarfful::raw_header_t &rh, const Tarfful::header_t &h) {
+  sprintf(&rh.mode[0], "%zo", h.mode);
+  sprintf(&rh.owner[0], "%zo", h.owner);
+  sprintf(&rh.group[0], "%zo", h.group);
+  sprintf(&rh.size[0], "%zo", h.size);
+  sprintf(&rh.mtime[0], "%zo", h.mtime);
+  strncpy(&rh.name[0], &h.name[0], rh.name.size());
+  strncpy(&rh.linkname[0], &h.linkname[0], rh.linkname.size());
+  rh.type = h.type;
   /* Calculate and write checksum */
   const unsigned chksum = checksum(rh);
-  sprintf(&rh->checksum[0], "%06o", chksum);
-  rh->checksum[7] = ' ';
+  sprintf(&rh.checksum[0], "%06o", chksum);
+  rh.checksum[7] = ' ';
 
   return static_cast<int>(Tarfful::EStatus::ESUCCESS);
 }
 
-int Tarfful::Tar::file_write(raw_header_t *rh, const size_t &size) {
-
+int Tarfful::Tar::file_write(const raw_header_t &rh, const size_t &size) {
   std::array<Byte, sizeof(raw_header_t)> dest;
-  std::memcpy(dest.data(), rh, sizeof(raw_header_t));
+  std::memcpy(dest.data(), &rh, sizeof(raw_header_t));
   fstream.write(dest.data(), size);
 
   if (fstream.bad()) {
@@ -128,11 +127,11 @@ int Tarfful::Tar::file_read(std::ofstream &outputFile, const size_t &size) {
   return static_cast<int>(EStatus::ESUCCESS);
 }
 
-int Tarfful::Tar::file_read(raw_header_t *rh, const size_t &size) {
+int Tarfful::Tar::file_read(raw_header_t &rh, const size_t &size) {
   std::array<Byte, sizeof(raw_header_t)> dest;
-  std::memcpy(dest.data(), rh, sizeof(raw_header_t));
+  std::memcpy(dest.data(), &rh, sizeof(raw_header_t));
   fstream.read(dest.data(), size);
-  std::memcpy(rh, dest.data(), sizeof(raw_header_t));
+  std::memcpy(&rh, dest.data(), sizeof(raw_header_t));
 
   if (fstream.bad()) {
     return static_cast<int>(EStatus::EREADFAIL);
@@ -282,7 +281,7 @@ int Tarfful::Tar::ExtractAll() {
 }
 
 int Tarfful::Tar::seek(const size_t &newPos) {
-  int err = file_seek(newPos);
+  const int err = file_seek(newPos);
   pos = newPos;
   return err;
 }
@@ -301,12 +300,12 @@ int Tarfful::Tar::next() {
 
 int Tarfful::Tar::find(const std::string &name) {
   /* Start at beginning */
-  int err = rewind();
+  const int err = rewind();
   if (err) {
     return err;
   }
   /* Iterate all files until we hit an error or find the file */
-  while ((err = read_header()) == static_cast<int>(EStatus::ESUCCESS)) {
+  while (read_header() == static_cast<int>(EStatus::ESUCCESS)) {
     if (!strcmp(header->name.data(), name.data())) {
       return static_cast<int>(EStatus::ESUCCESS);
     }
@@ -317,11 +316,11 @@ int Tarfful::Tar::find(const std::string &name) {
 }
 
 int Tarfful::Tar::read_header() {
-  std::unique_ptr<raw_header_t> rh(new raw_header_t);
+  const std::unique_ptr<raw_header_t> rh(new raw_header_t);
   /* Save header position */
   last_header = pos;
   /* Read raw header */
-  int err = tread(rh.get());
+  int err = tread(*rh);
   if (err) {
     return static_cast<int>(err);
   }
@@ -331,7 +330,7 @@ int Tarfful::Tar::read_header() {
   if (err) {
     return err;
   }
-  err = raw_to_header(rh.get());
+  err = raw_to_header(*rh);
   return err;
 }
 
@@ -339,7 +338,7 @@ int Tarfful::Tar::read_data(std::ofstream &outputFile, const size_t &size) {
   /* If we have no remaining data then this is the first read, we get the size,
    * set the remaining data and seek to the beginning of the data */
   if (remaining_data == 0) {
-    std::unique_ptr<header_t> h(new header_t);
+    const std::unique_ptr<header_t> h(new header_t);
     /* Read header */
     int err = read_header();
     if (err) {
@@ -367,25 +366,25 @@ int Tarfful::Tar::read_data(std::ofstream &outputFile, const size_t &size) {
 }
 
 int Tarfful::Tar::write_header() {
-  std::unique_ptr<raw_header_t> rh(new raw_header_t);
+  const std::unique_ptr<raw_header_t> rh(new raw_header_t);
   /* Build raw header and write */
-  header_to_raw(rh.get(), header.get());
+  header_to_raw(*rh, *header);
   remaining_data = header->size;
-  const int err = twrite(rh.get(), sizeof(*rh));
+  const int err = twrite(*rh, sizeof(*rh));
   return err;
 }
 
 int Tarfful::Tar::write_file_header(const std::string &name,
                                     const size_t &size) {
-  strcpy(&header->name[0], name.data());
+  strncpy(&header->name[0], name.data(), header->name.size());
   header->size = size;
 
 #ifdef __linux__
   struct stat info = {};
 
   stat(name.data(), &info);
-  struct passwd *pw = getpwuid(info.st_uid);
-  struct group *gr = getgrgid(info.st_gid);
+  const struct passwd *pw = getpwuid(info.st_uid);
+  const struct group *gr = getgrgid(info.st_gid);
 
   header->mode = info.st_mode;
   header->owner = pw->pw_uid;
@@ -424,9 +423,4 @@ int Tarfful::Tar::write_data(const std::string &data, const size_t &size) {
   return static_cast<int>(EStatus::ESUCCESS);
 }
 
-int main(int argc, char *argv[]) {
-  std::unique_ptr<Tarfful::Tar> tar(new Tarfful::Tar("test.tar"));
-  tar->Archive(argv[1]);
-  tar->ExtractAll();
-  return 0;
-}
+int main() { return 0; }
