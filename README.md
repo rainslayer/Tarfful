@@ -11,7 +11,7 @@ C++11 implementation of microtar library
    
    Use ArchiveFile method of tar object passing filename to it to archive one single file.
    ```
-   tar.Archive(filename); 
+   tar.ArchiveFile(filename); 
    ```
    
    Use ArchiveDirectoryContent method of tar object passing directory name to it 
