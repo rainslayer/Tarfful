@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <string>
 
 #ifdef __linux__
@@ -111,7 +112,9 @@ public:
   explicit Tar(const std::string &archive)
       : header(new header_t), archive_name(std::move(archive)){};
 
-  int Archive(const std::string &path);
+  int ArchiveFile(const std::string &filename);
+
+  int ArchiveDirectoryContent(const std::string &path);
 
   int Extract(const std::string &filename);
 

@@ -148,7 +148,50 @@ int Tarfful::Tar::file_seek(const size_t &offset) {
   return static_cast<int>(EStatus::ESUCCESS);
 }
 
-int Tarfful::Tar::Archive(const std::string &path) {
+int Tarfful::Tar::ArchiveFile(const std::string &filename) {
+  if (!fstream.is_open()) {
+    fstream.open(archive_name,
+                 std::fstream::out | std::fstream::binary | std::fstream::app);
+  }
+
+  if (fstream.good()) {
+    std::ifstream ifstream;
+    ifstream.open(filename, std::fstream::in);
+
+    if (ifstream.bad()) {
+      return static_cast<int>(EStatus::EWRITEFAIL);
+    }
+
+#ifdef verbose
+    std::cout << filename << '\n';
+#endif
+    std::stringstream fileContent;
+    fileContent << ifstream.rdbuf();
+    int err = write_file_header(filename, fileContent.str().size());
+
+    if (err) {
+#ifdef verbose
+      std::cerr << "Error writing file header for: " << filename << '\n';
+#endif
+      return err;
+    }
+
+    err = write_data(fileContent.str(), fileContent.str().size());
+    if (err) {
+#ifdef verbose
+      std::cerr << "Error writing file content for: " << filename << '\n';
+#endif
+      return err;
+    }
+
+    return static_cast<int>(EStatus::ESUCCESS);
+
+  } else {
+    return static_cast<int>(EStatus::EWRITEFAIL);
+  }
+}
+
+int Tarfful::Tar::ArchiveDirectoryContent(const std::string &path) {
   if (!fstream.is_open()) {
     fstream.open(archive_name,
                  std::fstream::out | std::fstream::binary | std::fstream::app);
@@ -159,45 +202,15 @@ int Tarfful::Tar::Archive(const std::string &path) {
       for (const auto &dirEntry : fs::recursive_directory_iterator(path)) {
         if (fs::is_directory(dirEntry)) {
           continue;
+        } else {
+          ArchiveFile(dirEntry.path());
         }
-
-        Archive(dirEntry.path());
       }
-    } else {
-      std::ifstream ifstream;
-      ifstream.open(path, std::fstream::in);
-
-      if (ifstream.bad()) {
-        return static_cast<int>(EStatus::EWRITEFAIL);
-      }
-
-#ifdef verbose
-      std::cout << path << '\n';
-#endif
-
-      std::string fileContent((std::istreambuf_iterator<char>(ifstream)),
-                              std::istreambuf_iterator<char>());
-      int err = write_file_header(path, fileContent.size());
-
-      if (err) {
-#ifdef verbose
-        std::cerr << "Error writing file header for: " << path << '\n';
-#endif
-        return err;
-      }
-
-      err = write_data(fileContent, fileContent.size());
-      if (err) {
-#ifdef verbose
-        std::cerr << "Error writing file content for: " << path << '\n';
-#endif
-        return err;
-      }
+      return static_cast<int>(EStatus::ESUCCESS);
     }
-    return static_cast<int>(EStatus::ESUCCESS);
-  } else {
-    return static_cast<int>(EStatus::EWRITEFAIL);
+    throw std::invalid_argument("Not a directory");
   }
+  return static_cast<int>(EStatus::EWRITEFAIL);
 }
 
 int Tarfful::Tar::Extract(const std::string &filename) {
@@ -335,8 +348,8 @@ int Tarfful::Tar::read_header() {
 }
 
 int Tarfful::Tar::read_data(std::ofstream &outputFile, const size_t &size) {
-  /* If we have no remaining data then this is the first read, we get the size,
-   * set the remaining data and seek to the beginning of the data */
+  /* If we have no remaining data then this is the first read, we get the
+   * size, set the remaining data and seek to the beginning of the data */
   if (remaining_data == 0) {
     const std::unique_ptr<header_t> h(new header_t);
     /* Read header */
