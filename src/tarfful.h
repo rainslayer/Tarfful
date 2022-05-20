@@ -108,7 +108,7 @@ inline int header_to_raw(Tarfful::raw_header_t &rh,
 
 class Tar {
 private:
-  const std::unique_ptr<header_t> header;
+  std::unique_ptr<header_t> header;
   std::fstream fstream;
   const std::string archive_name = "";
   size_t pos = 0;
@@ -375,6 +375,7 @@ public:
     }
 
     if (fstream.good()) {
+      header = std::unique_ptr<header_t>(new header_t);
       std::ifstream ifstream;
       ifstream.open(filename, std::fstream::in);
 
@@ -420,7 +421,7 @@ public:
     if (fstream.good()) {
       if (fs::is_directory(path)) {
         for (const auto &dirEntry : fs::recursive_directory_iterator(path)) {
-          std::memset(header.get(), 0, sizeof(header_t));
+          header = std::unique_ptr<header_t>(new header_t);
           if (fs::is_directory(dirEntry)) {
             continue;
           } else {
