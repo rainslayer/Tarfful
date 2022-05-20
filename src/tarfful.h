@@ -1,5 +1,3 @@
-#pragma once
-
 #ifndef Tarfful
 #define Tarfful
 
@@ -97,8 +95,8 @@ inline int header_to_raw(Tarfful::raw_header_t &rh,
   sprintf(&rh.group[0], "%zo", h.group);
   sprintf(&rh.size[0], "%zo", h.size);
   sprintf(&rh.mtime[0], "%zo", h.mtime);
-  strncpy(&rh.name[0], &h.name[0], rh.name.size());
-  strncpy(&rh.linkname[0], &h.linkname[0], rh.linkname.size());
+  strncpy(&rh.name[0], &h.name[0], h.name.size());
+  strncpy(&rh.linkname[0], &h.linkname[0], h.linkname.size());
   rh.type = h.type;
   /* Calculate and write checksum */
   const unsigned chksum = checksum(rh);
@@ -133,11 +131,9 @@ private:
 
 #ifdef __linux__
     struct stat info = {};
-
     stat(name.data(), &info);
     const struct passwd *pw = getpwuid(info.st_uid);
     const struct group *gr = getgrgid(info.st_gid);
-
     header->mode = info.st_mode;
     header->owner = pw->pw_uid;
     header->group = gr->gr_gid;
@@ -154,9 +150,6 @@ private:
       header->type = 6;
     };
 #endif
-    const auto mtime = std::chrono::time_point_cast<std::chrono::seconds>(
-        fs::last_write_time(name));
-    header->mtime = mtime.time_since_epoch().count();
     /* Write header */
     return write_header();
   }
@@ -214,8 +207,8 @@ private:
     header->owner = strtoul(&rh.owner[0], nullptr, 8);
     header->size = strtoul(&rh.size[0], nullptr, 8);
     header->mtime = strtoul(&rh.mtime[0], nullptr, 8);
-    strncpy(&header->name[0], &rh.name[0], header->name.size());
-    strncpy(&header->linkname[0], &rh.linkname[0], header->linkname.size());
+    strncpy(&header->name[0], &rh.name[0], rh.name.size());
+    strncpy(&header->linkname[0], &rh.linkname[0], rh.linkname.size());
 
     return static_cast<int>(Tarfful::EStatus::ESUCCESS);
   }
@@ -427,6 +420,7 @@ public:
     if (fstream.good()) {
       if (fs::is_directory(path)) {
         for (const auto &dirEntry : fs::recursive_directory_iterator(path)) {
+          std::memset(header.get(), 0, sizeof(header_t));
           if (fs::is_directory(dirEntry)) {
             continue;
           } else {
