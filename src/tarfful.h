@@ -53,7 +53,14 @@ public:
   std::array<Byte, 8> checksum = {};
   unsigned char type = 0;
   std::array<Byte, 100> linkname = {};
-  std::array<Byte, 255> _padding = {};
+  std::array<Byte, 6> ustar = {"ustar"};
+  std::array<Byte, 2> ustar_version = {};
+  std::array<Byte, 32> owner_name = {"glacier"};
+  std::array<Byte, 32> group_name = {"glacier"};
+  std::array<Byte, 8> device_major = {};
+  std::array<Byte, 8> device_minor = {};
+  std::array<Byte, 155> filename_prefix = {};
+  std::array<Byte, 12> _padding = {};
 } raw_header_t;
 
 typedef struct header_t {
@@ -66,6 +73,7 @@ public:
   unsigned char type = 0;
   std::array<Byte, 100> name = {};
   std::array<Byte, 100> linkname = {};
+  std::array<Byte, 155> filename_prefix = {};
 } header_t;
 
 inline size_t round_up(const size_t &n, const size_t &incr) {
@@ -95,8 +103,10 @@ inline int header_to_raw(Tarfful::raw_header_t &rh,
   sprintf(&rh.group[0], "%zo", h.group);
   sprintf(&rh.size[0], "%zo", h.size);
   sprintf(&rh.mtime[0], "%zo", h.mtime);
-  strncpy(&rh.name[0], &h.name[0], h.name.size());
+  strncpy(&rh.name[0], &h.name[0], rh.name.size());
   strncpy(&rh.linkname[0], &h.linkname[0], h.linkname.size());
+  strncpy(&rh.filename_prefix[0], &h.filename_prefix[0],
+          rh.filename_prefix.size());
   rh.type = h.type;
   /* Calculate and write checksum */
   const unsigned chksum = checksum(rh);
@@ -126,7 +136,10 @@ private:
   }
 
   inline int write_file_header(const std::string &name, const size_t &size) {
-    strncpy(&header->name[0], name.data(), name.size());
+    strncpy(&header->name[0], fs::path(name).filename().c_str(),
+            header->name.size());
+    strncpy(&header->filename_prefix[0], fs::path(name).parent_path().c_str(),
+            header->filename_prefix.size());
     header->size = size;
 
 #ifdef __linux__
@@ -137,6 +150,7 @@ private:
     header->mode = info.st_mode;
     header->owner = pw->pw_uid;
     header->group = gr->gr_gid;
+    header->mtime = info.st_mtim.tv_sec;
 
     if (S_ISLNK(info.st_mode)) {
       header->type = 2;
@@ -375,7 +389,6 @@ public:
     }
 
     if (fstream.good()) {
-      header = std::unique_ptr<header_t>(new header_t);
       std::ifstream ifstream;
       ifstream.open(filename, std::fstream::in);
 
@@ -421,7 +434,6 @@ public:
     if (fstream.good()) {
       if (fs::is_directory(path)) {
         for (const auto &dirEntry : fs::recursive_directory_iterator(path)) {
-          header = std::unique_ptr<header_t>(new header_t);
           if (fs::is_directory(dirEntry)) {
             continue;
           } else {
