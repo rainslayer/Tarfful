@@ -5,21 +5,18 @@
 #include <chrono>
 #include <cstring>
 #include <fstream>
+#include <grp.h>
 #include <iostream>
-#include <memory>
+#include <linux/kdev_t.h>
+#include <pwd.h>
 #include <sstream>
 #include <string>
+#include <sys/stat.h>
 
 #if (__cplusplus < 201703L)
 #include <experimental/filesystem>
 #else
 #include <filesystem>
-#endif
-
-#ifdef __linux__
-#include <grp.h>
-#include <pwd.h>
-#include <sys/stat.h>
 #endif
 
 namespace Tarfful {
@@ -43,7 +40,6 @@ enum class EStatus {
 };
 
 typedef struct raw_header_t {
-public:
   std::array<Byte, 100> name = {};
   std::array<Byte, 8> mode = {};
   std::array<Byte, 8> owner = {};
@@ -55,8 +51,8 @@ public:
   std::array<Byte, 100> linkname = {};
   std::array<Byte, 6> ustar = {"ustar"};
   std::array<Byte, 2> ustar_version = {};
-  std::array<Byte, 32> owner_name = {"glacier"};
-  std::array<Byte, 32> group_name = {"glacier"};
+  std::array<Byte, 32> owner_name = {""};
+  std::array<Byte, 32> group_name = {""};
   std::array<Byte, 8> device_major = {};
   std::array<Byte, 8> device_minor = {};
   std::array<Byte, 155> filename_prefix = {};
@@ -64,7 +60,6 @@ public:
 } raw_header_t;
 
 typedef struct header_t {
-public:
   size_t mode = 0;
   size_t owner = 0;
   size_t group = 0;
@@ -74,13 +69,17 @@ public:
   std::array<Byte, 100> name = {};
   std::array<Byte, 100> linkname = {};
   std::array<Byte, 155> filename_prefix = {};
+  std::array<Byte, 32> owner_name = {""};
+  std::array<Byte, 32> group_name = {""};
+  std::array<Byte, 8> device_major = {};
+  std::array<Byte, 8> device_minor = {};
 } header_t;
 
-inline size_t round_up(const size_t &n, const size_t &incr) {
+size_t round_up(const size_t &n, const size_t &incr) {
   return n + (incr - n % incr) % incr;
 }
 
-inline size_t checksum(const Tarfful::raw_header_t &rh) {
+size_t checksum(const Tarfful::raw_header_t &rh) {
   std::array<Tarfful::Byte, sizeof(Tarfful::raw_header_t)> headerPtr;
   std::memcpy(headerPtr.data(), &rh, sizeof(Tarfful::raw_header_t));
 
@@ -96,8 +95,7 @@ inline size_t checksum(const Tarfful::raw_header_t &rh) {
   return res;
 }
 
-inline int header_to_raw(Tarfful::raw_header_t &rh,
-                         const Tarfful::header_t &h) {
+int header_to_raw(Tarfful::raw_header_t &rh, const Tarfful::header_t &h) {
   sprintf(&rh.mode[0], "%zo", h.mode);
   sprintf(&rh.owner[0], "%zo", h.owner);
   sprintf(&rh.group[0], "%zo", h.group);
@@ -107,8 +105,15 @@ inline int header_to_raw(Tarfful::raw_header_t &rh,
   strncpy(&rh.linkname[0], &h.linkname[0], h.linkname.size());
   strncpy(&rh.filename_prefix[0], &h.filename_prefix[0],
           rh.filename_prefix.size());
+  strncpy(rh.owner_name.data(), h.owner_name.data(), rh.owner_name.size());
+  strncpy(rh.group_name.data(), h.group_name.data(), rh.group_name.size());
+  strncpy(rh.device_major.data(), h.device_major.data(),
+          rh.device_major.size());
+  strncpy(rh.device_minor.data(), h.device_minor.data(),
+          rh.device_minor.size());
+
   rh.type = h.type;
-  /* Calculate and write checksum */
+
   const unsigned chksum = checksum(rh);
   sprintf(&rh.checksum[0], "%06o", chksum);
   rh.checksum[7] = ' ';
@@ -118,7 +123,7 @@ inline int header_to_raw(Tarfful::raw_header_t &rh,
 
 class Tar {
 private:
-  std::unique_ptr<header_t> header;
+  header_t header;
   std::fstream fstream;
   const std::string archive_name = "";
   size_t pos = 0;
@@ -126,61 +131,75 @@ private:
   size_t last_header = 0;
 
 private:
-  inline int write_header() {
-    const std::unique_ptr<raw_header_t> rh(new raw_header_t);
+  int write_header() {
+    raw_header_t rh;
     /* Build raw header and write */
-    header_to_raw(*rh, *header);
-    remaining_data = header->size;
-    const int err = twrite(*rh, sizeof(*rh));
+    header_to_raw(rh, header);
+    remaining_data = header.size;
+    const int err = twrite(rh, sizeof(rh));
     return err;
   }
 
-  inline int write_file_header(const std::string &name, const size_t &size) {
-    strncpy(&header->name[0], fs::path(name).filename().c_str(),
-            header->name.size());
-    strncpy(&header->filename_prefix[0], fs::path(name).parent_path().c_str(),
-            header->filename_prefix.size());
-    header->size = size;
+  int write_file_header(const std::string &name, const size_t &size) {
+    strncpy(header.name.data(), fs::path(name).filename().c_str(),
+            header.name.size());
 
-#ifdef __linux__
+    const std::string parent_path = fs::path(name).parent_path();
+
+    if (parent_path[0] == '/') {
+#ifdef verbose
+      std::cout << "Removing leading / from path" << ' ' << parent_path << '\n';
+#endif
+
+      strncpy(header.filename_prefix.data(), parent_path.data() + 1,
+              parent_path.size());
+    } else {
+      strncpy(header.filename_prefix.data(), parent_path.data(),
+              parent_path.size());
+    }
+    header.size = size;
+
     struct stat info = {};
     stat(name.data(), &info);
     const struct passwd *pw = getpwuid(info.st_uid);
     const struct group *gr = getgrgid(info.st_gid);
-    header->mode = info.st_mode;
-    header->owner = pw->pw_uid;
-    header->group = gr->gr_gid;
-    header->mtime = info.st_mtim.tv_sec;
+    header.mode = info.st_mode;
+    header.owner = pw->pw_uid;
+    header.group = gr->gr_gid;
+    header.mtime = info.st_mtim.tv_sec;
+    strncpy(header.owner_name.data(), pw->pw_name, strlen(pw->pw_name));
+    strncpy(header.group_name.data(), gr->gr_name, strlen(gr->gr_name));
+    sprintf(header.device_major.data(), "%zo", MAJOR(info.st_dev));
+    sprintf(header.device_minor.data(), "%zo", MINOR(info.st_dev));
 
     if (S_ISLNK(info.st_mode)) {
-      header->type = 2;
+      header.type = 2;
     } else if (S_ISCHR(info.st_mode)) {
-      header->type = 3;
+      header.type = 3;
     } else if (S_ISBLK(info.st_mode)) {
-      header->type = 4;
+      header.type = 4;
     } else if (S_ISDIR(info.st_mode)) {
-      header->type = 5;
+      header.type = 5;
     } else if (S_ISFIFO(info.st_mode)) {
-      header->type = 6;
+      header.type = 6;
     };
-#endif
-    /* Write header */
+
     return write_header();
   }
 
-  inline int twrite(const raw_header_t &rh, const size_t &size) {
+  int twrite(const raw_header_t &rh, const size_t &size) {
     const int err = file_write(rh, size);
     pos += size;
     return err;
   }
 
-  inline int twrite(const std::string &data, const size_t &size) {
+  int twrite(const std::string &data, const size_t &size) {
     const int err = file_write(data, size);
     pos += size;
     return err;
   }
 
-  inline int write_data(const std::string &data, const size_t &size) {
+  int write_data(const std::string &data, const size_t &size) {
     /* Write data */
     const int err = twrite(data, size);
     if (err) {
@@ -194,7 +213,7 @@ private:
     return static_cast<int>(EStatus::ESUCCESS);
   }
 
-  inline int write_null_bytes(const size_t &n) {
+  int write_null_bytes(const size_t &n) {
     for (size_t i = 0; i < n; ++i) {
       const int err = twrite("\0", 1);
       if (err) {
@@ -204,30 +223,28 @@ private:
     return static_cast<int>(EStatus::ESUCCESS);
   }
 
-  inline int raw_to_header(const raw_header_t &rh) {
-    /* If the checksum starts with a null byte we assume the record is NULL */
+  int raw_to_header(const raw_header_t &rh) {
     if (rh.checksum[0] == '\0') {
       return static_cast<int>(Tarfful::EStatus::ENULLRECORD);
     }
 
-    /* Build and compare checksum */
     const unsigned chksum1 = checksum(rh);
     const unsigned chksum2 = strtoul(&rh.checksum[0], nullptr, 8);
     if (chksum1 != chksum2) {
       return static_cast<int>(Tarfful::EStatus::EBADCHKSUM);
     }
 
-    header->mode = strtoul(&rh.mode[0], nullptr, 8);
-    header->owner = strtoul(&rh.owner[0], nullptr, 8);
-    header->size = strtoul(&rh.size[0], nullptr, 8);
-    header->mtime = strtoul(&rh.mtime[0], nullptr, 8);
-    strncpy(&header->name[0], &rh.name[0], rh.name.size());
-    strncpy(&header->linkname[0], &rh.linkname[0], rh.linkname.size());
+    header.mode = strtoul(&rh.mode[0], nullptr, 8);
+    header.owner = strtoul(&rh.owner[0], nullptr, 8);
+    header.size = strtoul(&rh.size[0], nullptr, 8);
+    header.mtime = strtoul(&rh.mtime[0], nullptr, 8);
+    strncpy(header.name.data(), &rh.name[0], rh.name.size());
+    strncpy(header.linkname.data(), &rh.linkname[0], rh.linkname.size());
 
     return static_cast<int>(Tarfful::EStatus::ESUCCESS);
   }
 
-  inline int file_write(const raw_header_t &rh, const size_t &size) {
+  int file_write(const raw_header_t &rh, const size_t &size) {
     std::array<Byte, sizeof(raw_header_t)> dest;
     std::memcpy(dest.data(), &rh, sizeof(raw_header_t));
     fstream.write(dest.data(), size);
@@ -239,7 +256,7 @@ private:
     }
   }
 
-  inline int file_write(const std::string &data, const size_t &size) {
+  int file_write(const std::string &data, const size_t &size) {
     fstream.write(data.data(), size);
 
     if (fstream.bad()) {
@@ -249,7 +266,7 @@ private:
     }
   }
 
-  inline int file_read(std::ofstream &outputFile, const size_t &size) {
+  int file_read(std::ofstream &outputFile, const size_t &size) {
     std::string fileContent(size, '\0');
     fstream.read(&fileContent[0], size);
     outputFile.write(&fileContent[0], size);
@@ -260,7 +277,7 @@ private:
     return static_cast<int>(EStatus::ESUCCESS);
   }
 
-  inline int file_read(raw_header_t &rh, const size_t &size) {
+  int file_read(raw_header_t &rh, const size_t &size) {
     std::array<Byte, sizeof(raw_header_t)> dest;
     std::memcpy(dest.data(), &rh, sizeof(raw_header_t));
     fstream.read(dest.data(), size);
@@ -272,7 +289,7 @@ private:
     return static_cast<int>(EStatus::ESUCCESS);
   }
 
-  inline int file_seek(const size_t &offset) {
+  int file_seek(const size_t &offset) {
     fstream.seekg(offset, std::ios_base::beg);
 
     if (fstream.bad()) {
@@ -281,12 +298,12 @@ private:
     return static_cast<int>(EStatus::ESUCCESS);
   }
 
-  inline int read_header() {
-    const std::unique_ptr<raw_header_t> rh(new raw_header_t);
+  int read_header() {
+    raw_header_t rh;
     /* Save header position */
     last_header = pos;
     /* Read raw header */
-    int err = tread(*rh);
+    int err = tread(rh);
     if (err) {
       return static_cast<int>(err);
     }
@@ -296,23 +313,23 @@ private:
     if (err) {
       return err;
     }
-    err = raw_to_header(*rh);
+    err = raw_to_header(rh);
     return err;
   }
 
-  inline int next() {
+  int next() {
     /* Seek to next record */
-    const int n = round_up(header->size, 512) + sizeof(raw_header_t);
+    const int n = round_up(header.size, 512) + sizeof(raw_header_t);
     return seek(pos + n);
   }
 
-  inline int rewind() {
+  int rewind() {
     remaining_data = 0;
     last_header = 0;
     return seek(0);
   }
 
-  inline int find(const std::string &name) {
+  int find(const std::string &name) {
     /* Start at beginning */
     const int err = rewind();
     if (err) {
@@ -320,7 +337,7 @@ private:
     }
     /* Iterate all files until we hit an error or find the file */
     while (read_header() == static_cast<int>(EStatus::ESUCCESS)) {
-      if (!strcmp(header->name.data(), name.data())) {
+      if (!strcmp(header.name.data(), name.data())) {
         return static_cast<int>(EStatus::ESUCCESS);
       }
       next();
@@ -329,17 +346,17 @@ private:
     return static_cast<int>(EStatus::ENOTFOUND);
   }
 
-  inline int seek(const size_t &newPos) {
+  int seek(const size_t &newPos) {
     const int err = file_seek(newPos);
     pos = newPos;
     return err;
   }
 
-  inline int read_data(std::ofstream &outputFile, const size_t &size) {
+  int read_data(std::ofstream &outputFile, const size_t &size) {
     /* If we have no remaining data then this is the first read, we get the
      * size, set the remaining data and seek to the beginning of the data */
     if (remaining_data == 0) {
-      const std::unique_ptr<header_t> h(new header_t);
+      header_t h;
       /* Read header */
       int err = read_header();
       if (err) {
@@ -350,7 +367,7 @@ private:
       if (err) {
         return err;
       }
-      remaining_data = h->size;
+      remaining_data = h.size;
     }
     /* Read data */
     int err = tread(outputFile, size);
@@ -366,29 +383,29 @@ private:
     return static_cast<int>(EStatus::ESUCCESS);
   }
 
-  inline int tread(std::ofstream &outputFile, const size_t &size) {
+  int tread(std::ofstream &outputFile, const size_t &size) {
     const int err = file_read(outputFile, size);
     pos += size;
     return err;
   }
 
-  inline int tread(raw_header_t &rh) {
+  int tread(raw_header_t &rh) {
     const int err = file_read(rh, 512);
     pos += 512;
     return err;
   }
 
 public:
-  inline explicit Tar(const std::string &archive)
-      : header(new header_t), archive_name(std::move(archive)){};
+  explicit Tar(const std::string &archive) : archive_name(archive){};
 
-  inline int ArchiveFile(const std::string &filename) {
+  int ArchiveFile(const std::string &filename) {
     if (!fstream.is_open()) {
       fstream.open(archive_name, std::fstream::out | std::fstream::binary |
                                      std::fstream::app);
     }
 
     if (fstream.good()) {
+      header = header_t();
       std::ifstream ifstream;
       ifstream.open(filename, std::fstream::in);
 
@@ -396,25 +413,16 @@ public:
         return static_cast<int>(EStatus::EWRITEFAIL);
       }
 
-#ifdef verbose
-      std::cout << filename << '\n';
-#endif
       std::stringstream fileContent;
       fileContent << ifstream.rdbuf();
       int err = write_file_header(filename, fileContent.str().size());
 
       if (err) {
-#ifdef verbose
-        std::cerr << "Error writing file header for: " << filename << '\n';
-#endif
         return err;
       }
 
       err = write_data(fileContent.str(), fileContent.str().size());
       if (err) {
-#ifdef verbose
-        std::cerr << "Error writing file content for: " << filename << '\n';
-#endif
         return err;
       }
 
@@ -425,7 +433,7 @@ public:
     }
   }
 
-  inline int ArchiveDirectoryContent(const std::string &path) {
+  int ArchiveDirectoryContent(const std::string &path) {
     if (!fstream.is_open()) {
       fstream.open(archive_name, std::fstream::out | std::fstream::binary |
                                      std::fstream::app);
@@ -447,7 +455,7 @@ public:
     return static_cast<int>(EStatus::EWRITEFAIL);
   }
 
-  inline int Extract(const std::string &filename) {
+  int Extract(const std::string &filename) {
     if (!fstream.is_open()) {
       fstream.open(archive_name, std::fstream::in | std::fstream::binary);
     }
@@ -463,20 +471,13 @@ public:
       int err = find(filename);
 
       if (err) {
-#ifdef verbose
-        std::cerr << "File not found: " << filename << '\n';
-#endif
-
         return err;
       }
 
       std::ofstream fileContent(filename,
                                 std::fstream::out | std::fstream::binary);
-      err = read_data(fileContent, header->size);
+      err = read_data(fileContent, header.size);
       if (err) {
-#ifdef verbose
-        std::cerr << "Error extracting file: " << filename << '\n';
-#endif
         fs::remove(filename);
         return err;
       }
@@ -487,32 +488,24 @@ public:
     }
   }
 
-  inline int ExtractAll() {
+  int ExtractAll() {
     if (!fstream.is_open()) {
       fstream.open(archive_name, std::fstream::in | std::fstream::binary);
     }
     if (fstream.good()) {
 
       while (read_header() != static_cast<int>(Tarfful::EStatus::ENULLRECORD)) {
-        const std::string filename = header->name.data();
-
-#ifdef verbose
-        std::cout << filename << '\n';
-#endif
-
+        const std::string filename = header.name.data();
         const std::string parentPath = fs::path(filename).parent_path();
+
         if (!parentPath.empty() && !fs::exists(parentPath)) {
           fs::create_directories(parentPath);
         }
 
         std::ofstream fileContent(filename,
                                   std::fstream::out | std::fstream::binary);
-        const int err = read_data(fileContent, header->size);
+        const int err = read_data(fileContent, header.size);
         if (err) {
-#ifdef verbose
-          std::cerr << "Error extracting file: " << filename << '\n';
-#endif
-
           fs::remove(filename);
           return err;
         }
