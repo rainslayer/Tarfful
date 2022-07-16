@@ -169,8 +169,8 @@ private:
     header.mtime = info.st_mtim.tv_sec;
     strncpy(header.owner_name.data(), pw->pw_name, strlen(pw->pw_name));
     strncpy(header.group_name.data(), gr->gr_name, strlen(gr->gr_name));
-    sprintf(header.device_major.data(), "%zo", MAJOR(info.st_dev));
-    sprintf(header.device_minor.data(), "%zo", MINOR(info.st_dev));
+    sprintf(header.device_major.data(), "%d", MAJOR(info.st_dev));
+    sprintf(header.device_minor.data(), "%d", MINOR(info.st_dev));
 
     if (S_ISLNK(info.st_mode)) {
       header.type = 2;
