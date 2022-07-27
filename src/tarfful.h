@@ -3,6 +3,7 @@
 
 #include <array>
 #include <chrono>
+#include <vector>
 #include <cstring>
 #include <fstream>
 #include <grp.h>
@@ -12,6 +13,8 @@
 #include <sstream>
 #include <string>
 #include <sys/stat.h>
+#include <exception>
+#include <algorithm>
 
 #if (__cplusplus < 201703L)
 #include <experimental/filesystem>
@@ -90,9 +93,10 @@ private:
   size_t pos = 0;
   size_t remaining_data = 0;
   size_t last_header = 0;
+  static constexpr int BUFF_SIZE = 8192;
 
 private:
-  void write_file_header(const std::string &name, const size_t size) {
+  void write_file_header(const std::string &name) {
     auto header = header_t();
 
     {
@@ -143,36 +147,33 @@ private:
       }
     }
 
-      sprintf(&header.size[0], "%zo", size);
+      sprintf(&header.size[0], "%zo", fs::file_size(name));
       sprintf(&header.checksum[0], "%06zo", checksum(header));
       header.checksum[7] = ' ';
-      remaining_data = size;
 
-      twrite(header, sizeof(header));
+      file_write(header);
   }
 
-  void twrite(const header_t &header, const size_t size) {
-    file_write(header);
-    pos += size;
-  }
+  void write_data(const std::string &filename) {
+    std::ifstream ifstream;
+    ifstream.open(filename, std::fstream::in | std::fstream::binary);
 
-  void twrite(const std::string &data, const size_t size) {
-    file_write(data);
-    pos += size;
-  }
+    while (!ifstream.eof()) {
+      std::string chunk(BUFF_SIZE, 0);
+      ifstream.read(chunk.data(), BUFF_SIZE);
 
-  void write_data(const std::string &data) {
-    twrite(data, data.size());
-    remaining_data -= data.size();
-
-    if (remaining_data == 0) {
-        write_null_bytes(round_up(pos) - pos);
+      auto contentSize = ifstream.gcount();
+      fstream.write(chunk.data(), contentSize);
+      pos += contentSize;
     }
+    
+    write_null_bytes(round_up(pos) - pos);
   }
 
   void write_null_bytes(const size_t &n) {
     const std::string nullstring(n, '\0');
-    twrite(nullstring, n);
+    pos += n;
+    fstream.write(nullstring.data(), n);
   }
 
   int raw_to_header(const header_t &header) {
@@ -347,26 +348,9 @@ public:
   }
 
 
-  int ArchiveFile(const std::string &filename) {
-    if (fstream.good()) {
-      std::ifstream ifstream;
-      ifstream.open(filename, std::fstream::in);
-
-      if (ifstream.bad()) {
-        return static_cast<int>(EStatus::EWRITEFAIL);
-      }
-
-      std::stringstream fileContent;
-      fileContent << ifstream.rdbuf();
-
-      const auto size = fileContent.str().size();
-      write_file_header(filename, size);
-      write_data(fileContent.str());
-
-      return static_cast<int>(EStatus::ESUCCESS);
-    } else {
-      return static_cast<int>(EStatus::EWRITEFAIL);
-    }
+  void ArchiveFile(const std::string &filename) {
+      write_file_header(filename);
+      write_data(filename);
   }
 
   int ArchiveDirectoryContent(const std::string &path) {
