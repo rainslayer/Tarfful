@@ -88,10 +88,11 @@ class Tar {
 private:
   std::fstream fstream;
   const std::string archive_name;
+  std::unordered_map<uid_t, char*> users;
+  std::unordered_map<uid_t, char*> groups;
 
 private:
     char* getFileOwnerName(const uid_t st_uid) {
-      static std::unordered_map<uid_t, char*> users;
 
       if (!users[st_uid]) {
         const auto ownername = getpwuid(st_uid)->pw_name;
@@ -103,8 +104,6 @@ private:
     }
 
     char* getFileOwnerGroup(const uid_t st_gid) {
-      static std::unordered_map<uid_t, char*> groups;
-
       if (!groups[st_gid]) {
         const auto ownergroup = getgrgid(st_gid)->gr_name;
         groups[st_gid] = ownergroup;
@@ -145,7 +144,6 @@ private:
       sprintf(header.device_minor.data(), "%lo", MINOR(info.st_dev));
       strncpy(header.owner_name.data(), getFileOwnerName(info.st_uid), header.owner_name.size());
       strncpy(header.group_name.data(), getFileOwnerGroup(info.st_gid), header.owner_name.size());
-
 
       if (S_ISLNK(info.st_mode)) {
         header.type = 2;
