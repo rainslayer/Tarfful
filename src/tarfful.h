@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <utime.h>
 #include <unistd.h>
+#include <unordered_map>
 
 #if (__cplusplus < 201703L)
 #include <experimental/filesystem>
@@ -59,8 +60,8 @@ typedef struct header_t {
   std::array<Byte, 12> _padding = {};
 } header_t;
 
-static constexpr size_t BUFF_SIZE = 8192;
-static constexpr size_t headerSize = sizeof(header_t);
+constexpr size_t BUFF_SIZE = 8192;
+constexpr size_t headerSize = sizeof(header_t);
 
 size_t round_up(const size_t pos) {
   constexpr auto incr = headerSize;
@@ -68,7 +69,7 @@ size_t round_up(const size_t pos) {
 }
 
 size_t checksum(const header_t &header) {
-  std::array<Byte, headerSize> headerPtr;
+  std::array<Byte, headerSize> headerPtr = {};
   std::memcpy(headerPtr.data(), &header, headerSize);
 
   auto res = 256;
@@ -86,11 +87,35 @@ size_t checksum(const header_t &header) {
 class Tar {
 private:
   std::fstream fstream;
-  const std::string archive_name = "";
+  const std::string archive_name;
 
 private:
+    char* getFileOwnerName(const uid_t st_uid) {
+      static std::unordered_map<uid_t, char*> users;
+
+      if (!users[st_uid]) {
+        const auto ownername = getpwuid(st_uid)->pw_name;
+        users[st_uid] = ownername;
+        return ownername;
+      } else {
+        return users[st_uid];
+      }
+    }
+
+    char* getFileOwnerGroup(const uid_t st_gid) {
+      static std::unordered_map<uid_t, char*> groups;
+
+      if (!groups[st_gid]) {
+        const auto ownergroup = getgrgid(st_gid)->gr_name;
+        groups[st_gid] = ownergroup;
+        return ownergroup;
+      } else {
+        return groups[st_gid];
+      }
+    }
+
   void write_file_header(const std::string &name) {
-    auto header = header_t();
+    header_t header;
 
     {
       const std::string filename = fs::path(name).filename();
@@ -111,17 +136,16 @@ private:
     {
       struct stat info = {};
       stat(name.data(), &info);
-      const struct passwd *pw = getpwuid(info.st_uid);
-      const struct group *gr = getgrgid(info.st_gid);
 
       sprintf(&header.mode[0], "%o", info.st_mode);
-      sprintf(&header.owner[0], "%o", pw->pw_uid);
-      sprintf(&header.group[0], "%o", gr->gr_gid);
+      sprintf(&header.owner[0], "%o", info.st_uid);
+      sprintf(&header.group[0], "%o", info.st_gid);
       sprintf(&header.mtime[0], "%zo", info.st_mtim.tv_sec);
-      strncpy(header.owner_name.data(), pw->pw_name, header.owner_name.size());
-      strncpy(header.group_name.data(), gr->gr_name, header.group_name.size());
       sprintf(header.device_major.data(), "%lo", MAJOR(info.st_dev));
       sprintf(header.device_minor.data(), "%lo", MINOR(info.st_dev));
+      strncpy(header.owner_name.data(), getFileOwnerName(info.st_uid), header.owner_name.size());
+      strncpy(header.group_name.data(), getFileOwnerGroup(info.st_gid), header.owner_name.size());
+
 
       if (S_ISLNK(info.st_mode)) {
         header.type = 2;
@@ -149,7 +173,7 @@ private:
 
     while (!ifstream.eof()) {
       std::string chunk(BUFF_SIZE, 0);
-      ifstream.read(chunk.data(), BUFF_SIZE);
+      ifstream.read(&chunk[0], BUFF_SIZE);
 
       auto contentSize = ifstream.gcount();
       fstream.write(chunk.data(), contentSize);
@@ -164,7 +188,7 @@ private:
     fstream.write(nullstring.data(), n);
   }
 
-  int raw_to_header (const header_t &header) {
+  int raw_to_header(const header_t &header) {
     if (header.checksum[0] == '\0') {
       return static_cast<int>(Tarfful::EStatus::ENULLRECORD);
     }
@@ -202,7 +226,7 @@ private:
 
   int file_read(std::ofstream &outputFile, const size_t size) {
     std::string fileContent(size, '\0');
-    fstream.read(fileContent.data(), size);
+    fstream.read(&fileContent[0], size);
     outputFile.write(fileContent.data(), size);
 
     if (fstream.bad() || outputFile.bad()) {
@@ -212,7 +236,7 @@ private:
   }
 
   int file_read(header_t &rh, const size_t &size) {
-    std::array<Byte, headerSize> dest;
+    std::array<Byte, headerSize> dest = {};
     fstream.read(dest.data(), size);
     std::memcpy(&rh, dest.data(), headerSize);
 
@@ -247,7 +271,7 @@ private:
       currentFile += '/';
       currentFile += header.name.data();
 
-      if (filepath.compare(currentFile) == 0) {
+      if (filepath == currentFile) {
         return static_cast<int>(EStatus::ESUCCESS);
       }
 
@@ -313,7 +337,7 @@ private:
 
       chmod(filepath.data(), octalToDecimal(std::stoi(header.mode.data())));
       time_t mtime = octalToDecimal(std::stoull(header.mtime.data()));
-      struct utimbuf timebuf;
+      struct utimbuf timebuf = {};
       timebuf.actime = mtime;
       timebuf.modtime = mtime;
       utime(filepath.data(), &timebuf);
@@ -326,7 +350,7 @@ public:
                                    std::fstream::binary | std::fstream::app);
   }
 
-  void Archive(const std::string &path) {
+  void Archive(const fs::path &path) {
     if (fs::is_directory(path)) {
       for (const auto &dirEntry : fs::recursive_directory_iterator(path)) {
         if (fs::is_directory(dirEntry)) {
@@ -351,8 +375,7 @@ public:
   void ExtractAll() {
     header_t header;
 
-    while (read_header(header) !=
-           static_cast<int>(Tarfful::EStatus::ENULLRECORD)) {
+    while (read_header(header) != static_cast<int>(Tarfful::EStatus::ENULLRECORD)) {
       const std::string filename(header.name.data());
 
       ExtractFile(header);
