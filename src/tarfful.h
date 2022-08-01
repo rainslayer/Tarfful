@@ -1,11 +1,9 @@
-#ifndef Tarfful
-#define Tarfful
+#pragma once
 
 #include <array>
 #include <cstring>
 #include <fstream>
 #include <grp.h>
-#include <iostream>
 #include <linux/kdev_t.h>
 #include <pwd.h>
 #include <string>
@@ -60,15 +58,14 @@ typedef struct header_t {
   std::array<Byte, 12> _padding = {};
 } header_t;
 
-constexpr size_t BUFF_SIZE = 8192;
+constexpr size_t BUFF_SIZE = 8192 * 8192;
 constexpr size_t headerSize = sizeof(header_t);
 
-size_t round_up(const size_t pos) {
-  constexpr auto incr = headerSize;
-  return pos + (incr - pos % incr) % incr;
+size_t RoundUp(const size_t pos) {
+  return pos + (headerSize - pos % headerSize) % headerSize;
 }
 
-size_t checksum(const header_t &header) {
+size_t GenerateChecksum(const header_t &header) {
   std::array<Byte, headerSize> headerPtr = {};
   std::memcpy(headerPtr.data(), &header, headerSize);
 
@@ -84,6 +81,36 @@ size_t checksum(const header_t &header) {
   return res;
 }
 
+size_t OctalToDecimal(const size_t n) {
+  size_t decimal = 0;
+  size_t base = 1;
+  size_t temp = n;
+
+  while (temp) {
+    size_t last_digit = temp % 10;
+    temp = temp / 10;
+    decimal += last_digit * base;
+    base = base * 8;
+  }
+
+  return decimal;
+}
+
+int VerifyChecksum(const header_t &header) {
+  if (header.checksum[0] == '\0') {
+    return static_cast<int>(EStatus::ENULLRECORD);
+  }
+
+  const auto chksum1 = GenerateChecksum(header);
+  const auto chksum2 = OctalToDecimal(std::stoi(header.checksum.data()));
+
+  if (chksum1 != chksum2) {
+    return static_cast<int>(EStatus::EBADCHKSUM);
+  }
+
+  return static_cast<int>(EStatus::ESUCCESS);
+}
+
 class Tar {
 private:
   std::fstream fstream;
@@ -92,8 +119,7 @@ private:
   std::unordered_map<uid_t, char*> groups;
 
 private:
-    char* getFileOwnerName(const uid_t st_uid) {
-
+    char* GetFileOwnerName(const uid_t st_uid) {
       if (!users[st_uid]) {
         const auto ownername = getpwuid(st_uid)->pw_name;
         users[st_uid] = ownername;
@@ -103,7 +129,7 @@ private:
       }
     }
 
-    char* getFileOwnerGroup(const uid_t st_gid) {
+    char* GetFileOwnerGroup(const uid_t st_gid) {
       if (!groups[st_gid]) {
         const auto ownergroup = getgrgid(st_gid)->gr_name;
         groups[st_gid] = ownergroup;
@@ -113,7 +139,7 @@ private:
       }
     }
 
-  void write_file_header(const std::string &name) {
+  void WriteFileHeader(const std::string &name) {
     header_t header;
 
     {
@@ -142,8 +168,8 @@ private:
       sprintf(&header.mtime[0], "%zo", info.st_mtim.tv_sec);
       sprintf(header.device_major.data(), "%lo", MAJOR(info.st_dev));
       sprintf(header.device_minor.data(), "%lo", MINOR(info.st_dev));
-      strncpy(header.owner_name.data(), getFileOwnerName(info.st_uid), header.owner_name.size());
-      strncpy(header.group_name.data(), getFileOwnerGroup(info.st_gid), header.owner_name.size());
+      strncpy(header.owner_name.data(), GetFileOwnerName(info.st_uid), header.owner_name.size());
+      strncpy(header.group_name.data(), GetFileOwnerGroup(info.st_gid), header.owner_name.size());
 
       if (S_ISLNK(info.st_mode)) {
         header.type = 2;
@@ -159,13 +185,13 @@ private:
     }
 
     sprintf(&header.size[0], "%zo", fs::file_size(name));
-    sprintf(&header.checksum[0], "%06zo", checksum(header));
+    sprintf(&header.checksum[0], "%06zo", GenerateChecksum(header));
     header.checksum[7] = ' ';
 
-    file_write(header);
+    WriteFile(header);
   }
 
-  void write_data(const std::string &filename) {
+  void WriteFileContent(const std::string &filename) {
     std::ifstream ifstream;
     ifstream.open(filename, std::fstream::in | std::fstream::binary);
 
@@ -178,29 +204,15 @@ private:
     }
 
     const auto currentPos = fstream.tellg();
-    write_null_bytes(round_up(currentPos) - currentPos);
+    WriteNullBytes(RoundUp(currentPos) - currentPos);
   }
 
-  void write_null_bytes(const size_t n) {
+  void WriteNullBytes(const size_t n) {
     const std::string nullstring(n, '\0');
     fstream.write(nullstring.data(), n);
   }
 
-  int raw_to_header(const header_t &header) {
-    if (header.checksum[0] == '\0') {
-      return static_cast<int>(Tarfful::EStatus::ENULLRECORD);
-    }
-    const unsigned chksum1 = checksum(header);
-    const unsigned chksum2 = strtoul(header.checksum.data(), nullptr, 8);
-
-    if (chksum1 != chksum2) {
-      return static_cast<int>(Tarfful::EStatus::EBADCHKSUM);
-    }
-
-    return static_cast<int>(Tarfful::EStatus::ESUCCESS);
-  }
-
-  int file_write(const header_t &header) {
+  int WriteFile(const header_t &header) {
     std::array<Byte, headerSize> dest = {};
     std::memcpy(dest.data(), &header, dest.size());
     fstream.write(dest.data(), dest.size());
@@ -212,17 +224,7 @@ private:
     }
   }
 
-  int file_write(const std::string &data) {
-    fstream.write(data.data(), data.size());
-
-    if (fstream.bad()) {
-      return static_cast<int>(EStatus::EWRITEFAIL);
-    } else {
-      return static_cast<int>(EStatus::ESUCCESS);
-    }
-  }
-
-  int file_read(std::ofstream &outputFile, const size_t size) {
+  int ReadFile(std::ofstream &outputFile, const size_t size) {
     std::string fileContent(size, '\0');
     fstream.read(&fileContent[0], size);
     outputFile.write(fileContent.data(), size);
@@ -233,7 +235,7 @@ private:
     return static_cast<int>(EStatus::ESUCCESS);
   }
 
-  int file_read(header_t &rh, const size_t &size) {
+  int ReadFile(header_t &rh, const size_t size) {
     std::array<Byte, headerSize> dest = {};
     fstream.read(dest.data(), size);
     std::memcpy(&rh, dest.data(), headerSize);
@@ -244,27 +246,25 @@ private:
     return static_cast<int>(EStatus::ESUCCESS);
   }
 
-  void file_seek(const size_t offset) {
+  void SeekFile(const size_t offset) {
     fstream.seekg(offset, std::ios_base::cur);
   }
 
-  int read_header(header_t &header) {
-    int err = tread(header);
-    err = raw_to_header(header);
-    return err;
+  int ReadHeader(header_t &header) {
+    ReadFile(header, 512);
+    return VerifyChecksum(header);
   }
 
-  void next() {
+  void Next() {
     const auto currentPos = fstream.tellg();
-    const auto n = round_up(currentPos) - currentPos;
-    file_seek(n);
+    SeekFile(RoundUp(currentPos) - currentPos);
   }
 
-  int find(const std::string &filepath, header_t &header) {
+  int Find(const std::string &filepath, header_t &header) {
     fstream.clear();
     fstream.seekg(0);
 
-    while (read_header(header) == static_cast<int>(EStatus::ESUCCESS)) {
+    while (ReadHeader(header) == static_cast<int>(EStatus::ESUCCESS)) {
       std::string currentFile(header.filename_prefix.data());
       currentFile += '/';
       currentFile += header.name.data();
@@ -273,47 +273,21 @@ private:
         return static_cast<int>(EStatus::ESUCCESS);
       }
 
-      file_seek(octalToDecimal(std::stoi(header.size.data())));
-      next();
+      SeekFile(OctalToDecimal(std::stoi(header.size.data())));
+      Next();
     }
 
     return static_cast<int>(EStatus::ENOTFOUND);
   }
 
-  size_t octalToDecimal(const size_t n) {
-    size_t decimal = 0;
-    size_t base = 1;
-    size_t temp = n;
-
-    while (temp) {
-      size_t last_digit = temp % 10;
-      temp = temp / 10;
-      decimal += last_digit * base;
-      base = base * 8;
-    }
-
-    return decimal;
-  }
-
-  int read_data(std::ofstream &outputFile, const header_t &header) {
-    const int size = octalToDecimal(std::stoi(header.size.data()));
-    tread(outputFile, size);
-    return static_cast<int>(EStatus::ESUCCESS);
-  }
-
-  int tread(std::ofstream &outputFile, const size_t &size) {
-    const int err = file_read(outputFile, size);
-    return err;
-  }
-
-  int tread(header_t &rh) {
-    const int err = file_read(rh, 512);
-    return err;
+  int ReadData(std::ofstream &outputFile, const header_t &header) {
+    const int size = OctalToDecimal(std::stoi(header.size.data()));
+    return ReadFile(outputFile, size);
   }
 
   void ArchiveFile(const std::string &filename) {
-    write_file_header(filename);
-    write_data(filename);
+    WriteFileHeader(filename);
+    WriteFileContent(filename);
   }
 
   void ExtractFile(const header_t &header) {
@@ -323,23 +297,25 @@ private:
 
       if (!fs::exists(parentDirectory)) {
           fs::create_directories(parentDirectory);
-      chown(parentDirectory.data(), octalToDecimal(std::stoi(header.owner.data())), octalToDecimal(std::stoi(header.group.data())));
+      chown(parentDirectory.data(), OctalToDecimal(std::stoi(header.owner.data())),
+            OctalToDecimal(std::stoi(header.group.data())));
 
       }
 
       {
         std::ofstream fileStream(filepath,
                                std::fstream::out | std::fstream::binary);
-        read_data(fileStream, header);
+        ReadData(fileStream, header);
       }
 
-      chmod(filepath.data(), octalToDecimal(std::stoi(header.mode.data())));
-      time_t mtime = octalToDecimal(std::stoull(header.mtime.data()));
+      chmod(filepath.data(), OctalToDecimal(std::stoi(header.mode.data())));
+      time_t mtime = OctalToDecimal(std::stoull(header.mtime.data()));
       struct utimbuf timebuf = {};
       timebuf.actime = mtime;
       timebuf.modtime = mtime;
       utime(filepath.data(), &timebuf);
-      chown(filepath.data(), octalToDecimal(std::stoi(header.owner.data())), octalToDecimal(std::stoi(header.group.data())));
+      chown(filepath.data(), OctalToDecimal(std::stoi(header.owner.data())),
+            OctalToDecimal(std::stoi(header.group.data())));
   }
 
 public:
@@ -365,22 +341,22 @@ public:
   void Extract(const std::string &filepath) {
     header_t header;
 
-    if (find(filepath, header) == 0) {
+    if (Find(filepath, header) == 0) {
       ExtractFile(header);
     }
   }
 
   void ExtractAll() {
+    fstream.clear();
+    fstream.seekg(0);
     header_t header;
 
-    while (read_header(header) != static_cast<int>(Tarfful::EStatus::ENULLRECORD)) {
+    while (ReadHeader(header) == static_cast<int>(EStatus::ESUCCESS)) {
       const std::string filename(header.name.data());
 
       ExtractFile(header);
-      next();
+      Next();
     }
   }
 };
 } // namespace Tarfful
-
-#endif
