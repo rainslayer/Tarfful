@@ -1,5 +1,5 @@
 # Tarfful
-C++11 implementation of microtar library
+C++11 tar library
 
 ## Basic usage
 Create instance of Tar class passing desired archive name to the constructor 
