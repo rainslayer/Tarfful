@@ -5,4 +5,4 @@ set(CMAKE_CXX_STANDARD 11)
 link_libraries(stdc++fs)
 
 include_directories(src)
-add_library(tarfful SHARED src/tarfful.h src/tarfful.cpp)
+add_library(tarfful src/tarfful.h src/tarfful.cpp)
